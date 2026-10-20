@@ -1,0 +1,1819 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href="data:," />
+    <title>Agent 运行可视化演示</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0c10;
+        --bg2: #0e1117;
+        --panel: #12161f;
+        --line: #232a3a;
+        --line-soft: #1a2030;
+        --ink: #e8ecf4;
+        --ink2: #9aa6bb;
+        --ink3: #5f6b84;
+        --accent: #dfba6f;
+        --accent2: #7ee0a3;
+        --warn: #ffb454;
+        --err: #ff6b7a;
+        --violet: #b18cff;
+        --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+        --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+        /* 侧边栏固定深色（银灰 + 香槟金，像 neural-creator-dashboard 的神经网络面板） */
+        --s-bg: #0a0b0e;
+        --s-bg2: #111318;
+        --s-panel: #16171b;
+        --s-panel2: #1f2026;
+        --s-line: #33353d;
+        --s-line-soft: #232429;
+        --s-ink: #edece7;
+        --s-ink2: #a9aab2;
+        --s-ink3: #676a73;
+        --s-accent: #ecd9a6;
+        --s-tool: #a9bcd8;
+        --s-accent2: #8fd6a4;
+        --s-warn: #eda83c;
+        --s-err: #f28b96;
+        --s-violet: #a5a8e0;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          color-scheme: light;
+          --bg: #f2f4f8; --bg2: #e9edf3; --panel: #ffffff;
+          --line: #d7dde8; --line-soft: #e3e8f0;
+          --ink: #141a26; --ink2: #4c5870; --ink3: #8492ab;
+          --accent: #8f6b14; --accent2: #0f9d58; --warn: #c47b00; --err: #d93a4e; --violet: #7a4fd0;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; height: 100%; }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;
+      }
+      button { font-family: inherit; cursor: pointer; }
+      svg.ic { width: 15px; height: 15px; flex: none; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      svg.ic.sm { width: 12px; height: 12px; }
+
+      /* ================= app shell ================= */
+      .app { display: grid; grid-template-columns: minmax(0, 1fr) 424px; height: 100dvh; }
+
+      /* ================= chat (left, calm) ================= */
+      .chat {
+        display: flex; flex-direction: column; min-width: 0;
+        background:
+          radial-gradient(900px 480px at 18% -10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+          radial-gradient(700px 420px at 95% 110%, color-mix(in srgb, var(--violet) 6%, transparent), transparent 60%),
+          var(--bg);
+      }
+      .chat-head {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 14px 26px; border-bottom: 1px solid var(--line-soft);
+      }
+      .chat-title { font-weight: 650; font-size: 15px; letter-spacing: .01em; }
+      .chat-title .sub { color: var(--ink3); font-weight: 450; font-size: 12px; margin-left: 8px; }
+      .status-pill {
+        margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+        font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 999px;
+        border: 1px solid var(--line); background: var(--panel);
+      }
+      .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink3); }
+      .status-pill.running .dot { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+      .status-pill.done .dot { background: var(--accent2); }
+      @keyframes pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 50% { opacity: .55; box-shadow: 0 0 0 6px transparent; } }
+
+      .chat-scroll { flex: 1; overflow-y: auto; padding: 30px 26px 22px; scroll-behavior: smooth; }
+      .chat-inner { max-width: 740px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+
+      .msg { display: flex; gap: 12px; opacity: 0; transform: translateY(14px) scale(.99); }
+      .msg.in { animation: msgIn .55s cubic-bezier(.22,1,.36,1) forwards; }
+      @keyframes msgIn { to { opacity: 1; transform: none; } }
+      .avatar {
+        width: 30px; height: 30px; border-radius: 9px; flex: none; margin-top: 2px;
+        display: flex; align-items: center; justify-content: center;
+        background: color-mix(in srgb, var(--violet) 20%, var(--panel)); color: var(--violet);
+        border: 1px solid color-mix(in srgb, var(--violet) 35%, transparent);
+      }
+      .msg.agent .avatar {
+        background: color-mix(in srgb, var(--accent) 16%, var(--panel)); color: var(--accent);
+        border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+      }
+      .msg .who { font-size: 12px; font-weight: 650; color: var(--ink2); margin-bottom: 4px; }
+      .msg .bubble { font-size: 14.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; min-width: 0; }
+      .msg.user .bubble {
+        background: var(--panel); border: 1px solid var(--line-soft); border-radius: 4px 14px 14px 14px;
+        padding: 11px 15px;
+      }
+      .caret::after { content: "▍"; color: var(--accent); animation: blink 1s steps(1) infinite; }
+      @keyframes blink { 50% { opacity: 0; } }
+
+      /* working indicator (Claude Code 式状态行，对话区唯一的运行痕迹) */
+      .working {
+        display: none; align-items: center; gap: 10px; margin-left: 42px;
+        color: var(--ink2); font-size: 13px;
+      }
+      .working.show { display: flex; animation: msgIn .4s ease forwards; }
+      .working .star {
+        color: var(--accent); display: inline-flex;
+        animation: starPulse 1.2s ease-in-out infinite;
+      }
+      @keyframes starPulse { 0%,100% { transform: scale(1) rotate(0deg); opacity: 1; } 50% { transform: scale(1.25) rotate(45deg); opacity: .6; } }
+      .working .wtext { font-family: var(--mono); font-size: 12.5px; }
+      .working .wdots i { font-style: normal; animation: wdot 1.2s infinite; display: inline-block; }
+      .working .wdots i:nth-child(2) { animation-delay: .18s; }
+      .working .wdots i:nth-child(3) { animation-delay: .36s; }
+      @keyframes wdot { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+
+      .composer {
+        padding: 14px 26px calc(16px + env(safe-area-inset-bottom));
+        border-top: 1px solid var(--line-soft);
+      }
+      .composer-box {
+        max-width: 740px; margin: 0 auto; display: flex; align-items: center; gap: 8px;
+        background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 6px 6px 6px 16px;
+        transition: border-color .2s, box-shadow .2s;
+      }
+      .composer-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+      .composer-box input {
+        flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--ink); font: inherit; font-size: 14px;
+      }
+      .composer-box input::placeholder { color: var(--ink3); }
+      .send-btn {
+        width: 34px; height: 34px; border-radius: 10px; border: 0; flex: none;
+        background: var(--accent); color: #04121f; display: flex; align-items: center; justify-content: center;
+        transition: transform .12s, filter .15s;
+      }
+      .send-btn:hover { filter: brightness(1.1); }
+      .send-btn:active { transform: scale(.92); }
+      @media (prefers-color-scheme: light) { .send-btn { color: #fff; } }
+      .composer-note { max-width: 740px; margin: 8px auto 0; font-size: 11.5px; color: var(--ink3); text-align: center; }
+
+      /* ================= sidebar (right, the showpiece) ================= */
+      .side {
+        background: linear-gradient(180deg, var(--s-bg2), var(--s-bg) 240px);
+        color: var(--s-ink);
+        border-left: 1px solid var(--s-line-soft);
+        display: flex; flex-direction: column; min-width: 0; min-height: 0;
+        box-shadow: -24px 0 48px -32px rgba(0,0,0,.55);
+        animation: sideIn .7s cubic-bezier(.22,1,.36,1) both;
+      }
+      @keyframes sideIn { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
+
+      .side-head { padding: 15px 18px 13px; border-bottom: 1px solid var(--s-line-soft); position: relative; }
+      .side-head::after {
+        content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+        background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--s-accent) 55%, transparent), transparent);
+        opacity: .7;
+      }
+      .side-title-row { display: flex; align-items: center; gap: 9px; }
+      .side-title { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--s-ink2); }
+      .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--s-ink3); }
+      .live-dot.on { background: var(--s-accent2); box-shadow: 0 0 8px var(--s-accent2); animation: pulse2 1.4s ease-in-out infinite; }
+      @keyframes pulse2 { 50% { opacity: .45; } }
+      .side-clock { margin-left: auto; font-family: var(--mono); font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--s-ink); }
+      .side-clock small { font-size: 11px; color: var(--s-ink3); font-weight: 500; }
+
+      .side-stats { display: flex; gap: 16px; margin-top: 10px; font-family: var(--mono); font-size: 11.5px; color: var(--s-ink3); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+      .side-stats b { color: var(--s-ink); font-weight: 650; font-size: 12.5px; }
+
+      .ctx-row { display: flex; align-items: center; gap: 10px; margin-top: 11px; font-size: 11px; color: var(--s-ink3); font-family: var(--mono); }
+      .ctxbar { flex: 1; height: 5px; border-radius: 3px; background: var(--s-line-soft); overflow: hidden; }
+      .ctxbar > i {
+        display: block; height: 100%; width: 0%; border-radius: 3px;
+        background: linear-gradient(90deg, var(--s-accent), var(--s-accent2));
+        box-shadow: 0 0 10px color-mix(in srgb, var(--s-accent) 60%, transparent);
+        transition: width .6s cubic-bezier(.22,1,.36,1);
+      }
+
+      .controls { display: flex; align-items: center; gap: 7px; margin-top: 13px; flex-wrap: wrap; }
+      .btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: var(--s-panel); color: var(--s-ink);
+        border: 1px solid var(--s-line); border-radius: 8px;
+        padding: 6px 12px; font-size: 12.5px; font-weight: 550;
+        transition: border-color .15s, background .15s, transform .1s;
+      }
+      .btn:hover { border-color: var(--s-accent); }
+      .btn:active { transform: scale(.96); }
+      .btn.primary { background: var(--s-accent); border-color: var(--s-accent); color: #04121f; font-weight: 650; }
+      .speed-group { display: inline-flex; border: 1px solid var(--s-line); border-radius: 8px; overflow: hidden; margin-left: auto; }
+      .speed-group button { background: var(--s-panel); color: var(--s-ink2); border: 0; padding: 6px 9px; font-size: 12px; font-weight: 600; }
+      .speed-group button + button { border-left: 1px solid var(--s-line-soft); }
+      .speed-group button.on { background: var(--s-panel2); color: var(--s-accent); }
+      .scrub { width: 100%; margin-top: 11px; accent-color: var(--s-accent); height: 18px; cursor: pointer; }
+
+      .side-scroll { flex: 1; overflow-y: auto; padding: 16px 16px 30px; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--s-line) transparent; }
+      .side-scroll::-webkit-scrollbar { width: 8px; }
+      .side-scroll::-webkit-scrollbar-thumb { background: var(--s-line-soft); border-radius: 4px; }
+
+      /* ---------- DAG 图谱 ---------- */
+      .graph-zone {
+        position: relative; flex: none;
+        height: clamp(330px, 47%, 560px); min-height: 310px;
+        border-bottom: 1px solid var(--s-line-soft);
+        background: var(--s-bg);
+      }
+      .graph-viewport {
+        position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none;
+        background: radial-gradient(640px 300px at 50% -60px, color-mix(in srgb, var(--s-accent) 7%, transparent), transparent 65%);
+      }
+      .graph-viewport.grabbing { cursor: grabbing; }
+      .graph-world {
+        position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform;
+      }
+      #neuralBg { position: absolute; inset: 0; width: 100%; height: 100%; }
+      #graphCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .edge-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+      .edge { fill: none; stroke: #646a78; stroke-width: 2; opacity: 0; transition: opacity .3s; }
+      .edge-glow { fill: none; stroke: #98a0b4; stroke-width: 7; stroke-linecap: round; opacity: 0; filter: blur(4px); transition: opacity .3s; pointer-events: none; }
+      .edge-glow.shown { opacity: .16; }
+      .edge-glow.retry { stroke: var(--s-err); }
+      .edge-glow.retry.shown { opacity: .22; }
+      .orb-link { fill: none; stroke: var(--s-accent); stroke-width: 1; opacity: 0; transition: opacity .6s; }
+      .orb-link.in { opacity: .09; }
+      .orb-link.done { opacity: .16; }
+      .orb-link.act { opacity: .5; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--s-accent) 60%, transparent)); }
+      .pulse-dot { fill: #f4d894; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--s-accent) 90%, transparent)); }
+      .pulse-dot.retry { fill: #ffb3ba; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--s-err) 90%, transparent)); }
+      .pulse-halo { fill: color-mix(in srgb, var(--s-accent) 18%, transparent); }
+      .edge.shown { opacity: 1; }
+      .edge.retry { stroke: var(--s-err); }
+      .edge.retry.shown { opacity: .8; }
+      .edge.live { stroke: var(--s-accent); filter: drop-shadow(0 0 5px color-mix(in srgb, var(--s-accent) 75%, transparent)); }
+
+      .gnode {
+        position: absolute; display: flex; align-items: center; gap: 9px; padding: 0 10px;
+        background: linear-gradient(180deg, var(--s-panel2), var(--s-panel));
+        border: 1px solid var(--s-line); border-radius: 14px; cursor: pointer; z-index: 2;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 10px 24px -14px rgba(0,0,0,.7);
+        opacity: 0; transform: scale(.35);
+        transition: opacity .3s, transform .55s cubic-bezier(.34,1.4,.5,1), border-color .25s, box-shadow .25s;
+      }
+      .gnode.in { opacity: 1; transform: scale(1); }
+      .gnode.active::after {
+        content: ""; position: absolute; inset: -1px; border-radius: 15px; pointer-events: none;
+        border: 1px solid color-mix(in srgb, var(--s-accent) 65%, transparent);
+        animation: ringPulse 1.6s ease-out infinite;
+      }
+      @keyframes ringPulse { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(1.13, 1.32); opacity: 0; } }
+      .gnode:hover { border-color: var(--s-accent); }
+      .gnode .gn-icon {
+        width: 29px; height: 29px; border-radius: 8px; flex: none;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .gnode .gn-icon svg { width: 15px; height: 15px; }
+      .gnode.k-user .gn-icon { background: color-mix(in srgb, var(--s-violet) 18%, transparent); color: var(--s-violet); }
+      .gnode.k-think .gn-icon { background: color-mix(in srgb, var(--s-warn) 16%, transparent); color: var(--s-warn); }
+      .gnode.k-tool .gn-icon { background: color-mix(in srgb, var(--s-tool) 16%, transparent); color: var(--s-tool); }
+      .gnode.k-assistant .gn-icon { background: color-mix(in srgb, var(--s-accent2) 15%, transparent); color: var(--s-accent2); }
+      .gn-main { min-width: 0; flex: 1; }
+      .gn-title { font-size: 12.5px; font-weight: 650; color: var(--s-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .gnode.k-tool .gn-title { font-family: var(--mono); font-size: 11.5px; font-weight: 700; }
+      .gn-sub { font-family: var(--mono); font-size: 10px; color: var(--s-ink3); white-space: nowrap; margin-top: 1px; }
+      .gn-state { flex: none; width: 14px; display: flex; align-items: center; justify-content: center; }
+      .gnode.active { border-color: color-mix(in srgb, var(--s-accent) 70%, transparent); animation: nodePulse 1.5s ease-in-out infinite; }
+      @keyframes nodePulse {
+        0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--s-accent) 45%, transparent), 0 8px 26px -10px color-mix(in srgb, var(--s-accent) 60%, transparent); }
+        50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--s-accent) 15%, transparent), 0 8px 26px -10px color-mix(in srgb, var(--s-accent) 60%, transparent); }
+      }
+      .gnode.done { border-color: color-mix(in srgb, var(--s-accent2) 40%, var(--s-line)); }
+      .gnode.err { border-color: color-mix(in srgb, var(--s-err) 65%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--s-err) 10%, var(--s-panel2)), var(--s-panel)); }
+      .gnode.selected { border-color: var(--s-accent); box-shadow: 0 0 0 1.5px var(--s-accent), 0 10px 30px -14px color-mix(in srgb, var(--s-accent) 55%, transparent); }
+
+      .spinner {
+        width: 12px; height: 12px; border-radius: 50%; flex: none;
+        border: 2px solid var(--s-line); border-top-color: var(--s-accent);
+        animation: spin .7s linear infinite; display: none;
+      }
+      .gnode.active .spinner { display: inline-block; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .check { color: var(--s-accent2); font-weight: 700; display: none; font-size: 13px; }
+      .gnode.done .check { display: inline; animation: pop .3s cubic-bezier(.34,1.56,.64,1); }
+      .xmark { color: var(--s-err); font-weight: 700; display: none; font-size: 13px; }
+      .gnode.err .xmark { display: inline; animation: pop .3s cubic-bezier(.34,1.56,.64,1); }
+      @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+      .gchip {
+        position: absolute; z-index: 3; pointer-events: none; white-space: nowrap;
+        transform: translate(-50%, -50%) scale(.7); opacity: 0;
+        transition: opacity .35s, transform .45s cubic-bezier(.34,1.4,.5,1);
+        font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
+        padding: 3px 10px; border-radius: 999px;
+        background: color-mix(in srgb, var(--s-accent) 15%, var(--s-bg2)); color: var(--s-accent);
+        border: 1px solid color-mix(in srgb, var(--s-accent) 45%, transparent);
+      }
+      .gchip.in { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      .gchip.err { background: color-mix(in srgb, var(--s-err) 14%, var(--s-bg2)); color: var(--s-err); border-color: color-mix(in srgb, var(--s-err) 45%, transparent); }
+      .gchip.ok { background: color-mix(in srgb, var(--s-accent2) 13%, var(--s-bg2)); color: var(--s-accent2); border-color: color-mix(in srgb, var(--s-accent2) 42%, transparent); }
+
+      .graph-tools {
+        position: absolute; right: 10px; top: 10px; z-index: 6; display: flex; align-items: center; gap: 2px;
+        background: color-mix(in srgb, var(--s-panel) 88%, transparent); border: 1px solid var(--s-line);
+        border-radius: 9px; padding: 3px; backdrop-filter: blur(6px);
+      }
+      .graph-tools button { background: none; border: 0; color: var(--s-ink2); min-width: 27px; height: 25px; border-radius: 6px; font-size: 14px; font-weight: 650; padding: 0 6px; }
+      .graph-tools button:hover { background: var(--s-panel2); color: var(--s-accent); }
+      .graph-tools .zpct { font-family: var(--mono); font-size: 10.5px; color: var(--s-ink3); min-width: 38px; text-align: center; }
+      .graph-tools .fit { font-size: 11.5px; border-left: 1px solid var(--s-line-soft); border-radius: 0 6px 6px 0; margin-left: 2px; padding-left: 8px; }
+      .graph-hint {
+        position: absolute; left: 10px; bottom: 9px; z-index: 6; pointer-events: none;
+        font-size: 10.5px; color: var(--s-ink3);
+        background: color-mix(in srgb, var(--s-bg) 74%, transparent); padding: 3px 9px; border-radius: 6px;
+      }
+
+      /* ---------- 神经核光球（图谱的能量中枢，会呼吸） ---------- */
+      .orb { position: absolute; width: 120px; height: 120px; z-index: 1; pointer-events: none; }
+      .orb-core {
+        position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 32%, #fff8e7, #e9cd8d 34%, var(--s-accent) 52%, #9a7a34 74%, rgba(154,122,52,0) 80%);
+        box-shadow: 0 0 32px 8px color-mix(in srgb, var(--s-accent) 42%, transparent), 0 0 92px 30px color-mix(in srgb, var(--s-accent) 15%, transparent);
+        animation: orbBreathe 4.6s ease-in-out infinite;
+      }
+      .orb.hot .orb-core {
+        box-shadow: 0 0 44px 14px color-mix(in srgb, var(--s-accent) 58%, transparent), 0 0 110px 40px color-mix(in srgb, var(--s-accent) 22%, transparent);
+        animation-duration: 1.5s;
+      }
+      @keyframes orbBreathe {
+        0%, 100% { transform: translate(-50%, -50%) scale(1); filter: brightness(1); }
+        50% { transform: translate(-50%, -50%) scale(1.07); filter: brightness(1.13); }
+      }
+      .orb-ring { position: absolute; inset: 8px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--s-accent) 26%, transparent); animation: orbRing 4.6s ease-in-out infinite; }
+      .orb-ring::after { content: ""; position: absolute; inset: -13px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--s-accent) 12%, transparent); }
+      @keyframes orbRing { 0%, 100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.06); opacity: .45; } }
+      .orb-label {
+        position: absolute; left: 50%; top: calc(50% + 42px); transform: translateX(-50%);
+        font-family: var(--mono); font-size: 9.5px; font-weight: 600; letter-spacing: .24em;
+        color: var(--s-ink3); white-space: nowrap;
+      }
+      .particle { position: absolute; width: 5px; height: 5px; border-radius: 50%; z-index: 4; pointer-events: none; }
+
+      /* ---------- 节点检查器 ---------- */
+      .tag {
+        font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+        padding: 2px 7px; border-radius: 5px; font-family: var(--mono);
+      }
+      .tag.user { background: color-mix(in srgb, var(--s-violet) 18%, transparent); color: var(--s-violet); }
+      .tag.think { background: color-mix(in srgb, var(--s-warn) 16%, transparent); color: var(--s-warn); }
+      .tag.tool { background: color-mix(in srgb, var(--s-tool) 16%, transparent); color: var(--s-tool); }
+      .tag.assistant { background: color-mix(in srgb, var(--s-accent2) 15%, transparent); color: var(--s-accent2); }
+      .toolargs { font-family: var(--mono); font-size: 11.5px; color: var(--s-ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sync-note { font-size: 12px; color: var(--s-ink3); line-height: 1.6; }
+      .live-text { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; color: var(--s-ink2); line-height: 1.65; min-height: 20px; }
+      .result-box {
+        margin-top: 8px; background: var(--s-bg2); border: 1px solid var(--s-line-soft); border-radius: 8px;
+        padding: 8px 11px; font-family: var(--mono); font-size: 11.5px; color: var(--s-ink2);
+        white-space: pre-wrap; word-break: break-word; display: none;
+      }
+      .result-box.show { display: block; animation: boxIn .35s cubic-bezier(.22,1,.36,1); }
+      @keyframes boxIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+      .result-box .err-line { color: var(--s-err); }
+
+      .insp { border: 1px solid var(--s-line-soft); border-radius: 12px; background: linear-gradient(180deg, var(--s-panel2), var(--s-panel)); overflow: hidden; }
+      .insp-head { display: flex; align-items: center; gap: 8px; padding: 11px 13px 0; }
+      .insp-title { font-size: 13px; font-weight: 700; color: var(--s-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .insp-status { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--s-ink3); white-space: nowrap; }
+      .insp-body { padding: 9px 13px 13px; }
+      .insp-empty { font-size: 12.5px; color: var(--s-ink3); line-height: 1.65; }
+      .insp-sec { margin-top: 10px; border: 1px solid var(--s-line-soft); border-radius: 9px; overflow: hidden; background: var(--s-bg2); }
+      .insp-tabs { display: flex; gap: 4px; padding: 7px 10px 0; }
+      .insp-tabs button { background: none; border: 0; color: var(--s-ink2); font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 7px 7px 0 0; }
+      .insp-tabs button.on { color: var(--s-accent); background: var(--s-panel); }
+      pre.json {
+        margin: 0; padding: 11px 13px; background: var(--s-panel); font-family: var(--mono);
+        font-size: 11.5px; line-height: 1.65; overflow-x: auto; white-space: pre; min-height: 84px; color: var(--s-ink2);
+      }
+      .jk { color: var(--s-accent); } .js { color: var(--s-accent2); } .jn { color: var(--s-warn); } .jb { color: var(--s-violet); }
+      .insp-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--s-line-soft); border-top: 1px solid var(--s-line-soft); }
+      .insp-meta div { background: var(--s-bg2); padding: 7px 12px; }
+      .insp-meta .k { font-size: 10px; color: var(--s-ink3); text-transform: uppercase; letter-spacing: .06em; }
+      .insp-meta .v { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--s-ink); }
+
+      /* waterfall */
+      .wf { margin-top: 20px; border-top: 1px solid var(--s-line-soft); padding-top: 15px; }
+      .wf-head { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--s-ink2); margin-bottom: 9px; }
+      .wf-row { display: grid; grid-template-columns: 132px 1fr 46px; align-items: center; gap: 8px; padding: 3px 4px; font-size: 11px; cursor: pointer; border-radius: 6px; }
+      .wf-row:hover { background: var(--s-panel2); }
+      .wf-row .n { font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--s-ink2); }
+      .wf-row.sel .n { color: var(--s-accent); font-weight: 700; }
+      .wf-track { position: relative; height: 12px; background: var(--s-line-soft); border-radius: 4px; }
+      .wf-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 3px; background: var(--s-tool); min-width: 3px; transition: width .3s, left .3s; }
+      .wf-bar.think { background: var(--s-warn); } .wf-bar.bad { background: var(--s-err); } .wf-bar.ok2 { background: var(--s-accent2); }
+      .wf-row .d { font-family: var(--mono); color: var(--s-ink3); text-align: right; font-variant-numeric: tabular-nums; }
+      .legend { display: flex; gap: 13px; flex-wrap: wrap; margin-top: 9px; font-size: 11px; color: var(--s-ink3); }
+      .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
+      .side-foot { margin-top: 16px; font-size: 11px; color: var(--s-ink3); line-height: 1.6; }
+
+      /* ================= responsive: sidebar stacks below chat ================= */
+      @media (max-width: 900px) {
+        body { overflow: auto; }
+        .app { grid-template-columns: 1fr; height: auto; }
+        .chat { height: 62dvh; min-height: 420px; border-bottom: 1px solid var(--line-soft); }
+        .chat-head, .chat-scroll, .composer { padding-left: 16px; padding-right: 16px; }
+        .side { border-left: 0; box-shadow: none; animation: none; }
+        .graph-zone { height: 440px; min-height: 380px; }
+        .side-scroll { overflow: visible; }
+        pre.json { white-space: pre-wrap; word-break: break-word; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+
+      <!-- ============ 左：对话区（保持干净，运行过程不侵入） ============ -->
+      <main class="chat">
+        <header class="chat-head">
+          <div class="chat-title">iOS 登录闪退排查 · 近 7 天崩溃率统计<span class="sub">与 Agent 的对话</span></div>
+          <span class="status-pill" id="statusPill"><span class="dot"></span><span id="statusText">待开始</span></span>
+        </header>
+
+        <div class="chat-scroll" id="chatScroll">
+          <div class="chat-inner">
+            <div class="msg user" id="msgUser">
+              <div class="avatar" id="userAvatar"></div>
+              <div style="min-width:0">
+                <div class="who">你</div>
+                <div class="bubble" id="userBubble"></div>
+              </div>
+            </div>
+
+            <div class="working" id="working">
+              <span class="star" id="workingStar"></span>
+              <span class="wtext" id="workingText">思考中</span>
+              <span class="wdots"><i>.</i><i>.</i><i>.</i></span>
+            </div>
+
+            <div class="msg agent" id="msgAgent" hidden>
+              <div class="avatar" id="agentAvatar"></div>
+              <div style="min-width:0">
+                <div class="who">Agent</div>
+                <div class="bubble" id="agentBubble"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="composer">
+          <form class="composer-box" id="composerForm">
+            <input id="composerInput" type="text" placeholder="输入一句话，重新开始一次演示…" autocomplete="off" />
+            <button class="send-btn" type="submit" aria-label="发送并重新演示" id="sendBtn"></button>
+          </form>
+          <div class="composer-note">演示会话：右侧边栏实时呈现 Agent 的思考与工具调用，对话区只保留消息本身。</div>
+        </div>
+      </main>
+
+      <!-- ============ 右：侧边栏（运行过程的舞台） ============ -->
+      <aside class="side">
+        <div class="side-head">
+          <div class="side-title-row">
+            <span class="live-dot" id="liveDot"></span>
+            <span class="side-title">Agent 运行轨迹</span>
+            <span class="side-clock" id="stTime">0.0<small>s</small></span>
+          </div>
+          <div class="side-stats">
+            <span>步骤 <b id="stSteps">0 / 24</b></span>
+            <span>工具调用 <b id="stTools">0</b></span>
+            <span>Token <b id="stTokens">0</b></span>
+          </div>
+          <div class="ctx-row">
+            <span>上下文</span>
+            <div class="ctxbar"><i id="ctxFill"></i></div>
+            <span id="stCtx">0%</span>
+          </div>
+          <div class="controls">
+            <button class="btn primary" id="playBtn">▶ 播放</button>
+            <button class="btn" id="stepBtn">单步 →</button>
+            <button class="btn" id="resetBtn">↺ 重置</button>
+            <div class="speed-group" id="speedGroup">
+              <button data-s="0.5">0.5×</button><button data-s="1" class="on">1×</button><button data-s="2">2×</button><button data-s="4">4×</button>
+            </div>
+          </div>
+          <input class="scrub" id="scrub" type="range" min="0" max="100" value="0" aria-label="播放进度" />
+        </div>
+
+        <div class="graph-zone">
+          <div class="graph-viewport" id="graphViewport">
+            <canvas id="neuralBg" aria-hidden="true"></canvas>
+            <canvas id="graphCanvas" aria-hidden="true"></canvas>
+            <div class="graph-tools">
+              <button id="zoomOut" aria-label="缩小">−</button>
+              <span class="zpct" id="zoomPct">100%</span>
+              <button id="zoomIn" aria-label="放大">＋</button>
+              <button class="fit" id="fitBtn">适配全图</button>
+            </div>
+            <div class="graph-hint">神经网络图谱 · 中央光球为 Agent 核心 / 拖拽平移 / 滚轮缩放 / 点节点看详情</div>
+          </div>
+        </div>
+
+        <div class="side-scroll" id="sideScroll">
+          <div class="insp" id="inspector">
+            <div class="insp-head">
+              <span class="tag tool" id="inspTag">详情</span>
+              <span class="insp-title" id="inspTitle">步骤详情</span>
+              <span class="insp-status" id="inspStatus"></span>
+            </div>
+            <div class="insp-body" id="inspBody">
+              <div class="insp-empty">运行开始后，点击图谱中的任意节点，这里会显示这一步的思考内容、工具入参 / 出参。</div>
+            </div>
+          </div>
+
+          <div class="wf">
+            <div class="wf-head">耗时瀑布图</div>
+            <div id="wfBody"></div>
+            <div class="legend">
+              <span><i style="background:var(--s-warn)"></i>思考</span>
+              <span><i style="background:var(--s-tool)"></i>工具调用</span>
+              <span><i style="background:var(--s-err)"></i>失败</span>
+              <span><i style="background:var(--s-accent2)"></i>回复</span>
+            </div>
+          </div>
+
+          <div class="side-foot">在图谱里点任意节点、或点上方瀑布图的行，查看该步的入参 / 出参。本页为纯前端演示，数据均为虚构示例，不连接任何真实服务。</div>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      "use strict";
+
+      /* ============ 图标（内联 SVG，描边风格） ============ */
+      function icon(paths, cls) {
+        return '<svg class="ic ' + (cls || "") + '" viewBox="0 0 24 24">' + paths + "</svg>";
+      }
+      var IC = {
+        user: icon('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/>'),
+        spark: icon('<path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>'),
+        search: icon('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>'),
+        file: icon('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/>'),
+        activity: icon('<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'),
+        compass: icon('<circle cx="12" cy="12" r="10"/><path d="M16.2 7.8l-2 6.4-6.4 2 2-6.4z"/>'),
+        edit: icon('<path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/>'),
+        flask: icon('<path d="M9 3h6"/><path d="M10 3v5.5L4.7 19a2 2 0 0 0 1.8 3h11a2 2 0 0 0 1.8-3L14 8.5V3"/><path d="M7.5 14h9"/>'),
+        check: icon('<path d="M20 6L9 17l-5-5"/>'),
+        send: icon('<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>')
+      };
+      document.getElementById("userAvatar").innerHTML = IC.user;
+      document.getElementById("agentAvatar").innerHTML = IC.spark;
+      document.getElementById("workingStar").innerHTML = IC.spark;
+      document.getElementById("sendBtn").innerHTML = icon('<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>');
+
+      /* ============ 模拟数据：一段复杂的并行 agent 运行（iOS 登录闪退排查 + 崩溃率统计） ============ */
+      var EVENTS = [
+        { id: 0, kind: "user", nodeIcon: "user", title: "用户", dur: 0.6, tokens: 52, ctx: 3,
+          text: "线上好多用户反馈 iOS 端登录后闪退，查一下原因修了，顺便把近 7 天崩溃率统计拉出来看看",
+          input: { role: "user", content: "线上好多用户反馈 iOS 端登录后闪退，查一下原因修了，顺便把近 7 天崩溃率统计拉出来看看" },
+          output: null },
+
+        { id: 1, kind: "think", nodeIcon: "spark", title: "思考", dur: 3.2, tokens: 640, ctx: 6,
+          text: "任务有两条线：定位闪退根因，和拉近 7 天崩溃率。先三路并行推进：一路搜登录与 Token 相关代码，一路读崩溃上报模块确认采集是否正常，一路直接跑统计命令拿数据。",
+          input: { phase: "planning", strategy: "代码定位 / 日志配置 / 崩溃统计 三路并行" },
+          output: { plan: ["search_code 定位登录链路", "read_file 崩溃上报模块", "exec 拉近 7 天崩溃率"], parallel: 3 } },
+
+        { id: 2, kind: "parallel", children: [
+          { id: 2, kind: "tool", nodeIcon: "search", title: "search_code", dur: 2.2, tokens: 420, ctx: 10,
+            args: 'query: "login crash token refresh"  path: ios/',
+            result: "命中 5 处：\n  ios/Auth/TokenManager.swift:18  func refresh()\n  ios/Auth/AuthInterceptor.swift:42  401 重试时调用 refresh()\n  ios/Auth/CrashReporter.swift:9  崩溃采集入口\n  ios/Login/LoginView.swift:57  登录成功回调",
+            input: { query: "login crash token refresh", path: "ios/" },
+            output: { matches: 5, files: ["TokenManager.swift", "AuthInterceptor.swift", "CrashReporter.swift"] } },
+          { id: 3, kind: "tool", nodeIcon: "file", title: "read_file", dur: 2.6, tokens: 880, ctx: 17,
+            args: "ios/Auth/CrashReporter.swift（全文）",
+            result: "9   final class CrashReporter {\n12    static func start() {\n13      MetricsKit.setUp(); CrashCatcher.install()\n15    } // 采集通道正常，符号表已开启",
+            input: { path: "ios/Auth/CrashReporter.swift" },
+            output: { lines: 58, symbolication: true } },
+          { id: 4, kind: "tool", nodeIcon: "activity", title: "exec", dur: 3.0, tokens: 760, ctx: 24,
+            args: "crashlytics stats --days 7",
+            result: "$ crashlytics stats --days 7\n  崩溃率 4.2%（环比 +3.6pt）\n  iOS 17.x 占 91% · iOS 16 及以下仅 0.3%\n  Top 崩溃：EXC_BAD_ACCESS @ Keychain 查询",
+            input: { command: "crashlytics stats --days 7" },
+            output: { crash_rate_pct: 4.2, ios17_share_pct: 91, top_crash: "EXC_BAD_ACCESS @ Keychain" } }
+        ]},
+
+        { id: 5, kind: "think", nodeIcon: "spark", title: "思考", dur: 3.2, tokens: 700, ctx: 29,
+          text: "三路结果汇齐：近 7 天崩溃率 4.2%，九成集中在 iOS 17.x，Top 崩溃指向 Keychain 查询。下一步两路并行：查 iOS 17 Keychain 的公开已知问题，同时抓一台复现机的实时日志确认现场。",
+          input: { evidence: "崩溃率 4.2%，iOS 17.x 占 91%，Top 崩溃在 Keychain 查询" },
+          output: { next: ["查 iOS 17 Keychain 已知 issue", "抓复现机实时日志"], parallel: 2 } },
+
+        { id: 6, kind: "parallel", children: [
+          { id: 6, kind: "tool", nodeIcon: "compass", title: "browser.search", dur: 2.8, tokens: 940, ctx: 36,
+            args: 'query: "iOS 17 Keychain 并发访问 闪退"',
+            result: "开发者论坛 · 已知问题：\n  iOS 17 起 SecItemCopyMatching 在多线程并发调用时\n  可能触发 EXC_BAD_ACCESS，需串行化访问。\n  关联帖 3 条，均为 Token 刷新场景。",
+            input: { query: "iOS 17 Keychain 并发访问 闪退" },
+            output: { results: 3, known_issue: "SecItemCopyMatching 并发调用崩溃" } },
+          { id: 7, kind: "tool", nodeIcon: "activity", title: "exec", dur: 3.2, tokens: 1180, ctx: 44,
+            args: "xcode devices log --capture（复现机 iPhone 15 / iOS 17.4）",
+            result: "$ xcode devices log --capture\n  14:02:11 TokenManager: refresh 开始\n  14:02:11 AuthInterceptor: 401 → 触发 refresh\n  14:02:11 EXC_BAD_ACCESS KERN_INVALID_ADDRESS\n           at SecItemCopyMatching ← 两线程同时读 Keychain",
+            input: { command: "xcode devices log --capture", device: "iPhone 15 · iOS 17.4" },
+            output: { crash: "EXC_BAD_ACCESS", frame: "SecItemCopyMatching", trigger: "双线程并发读 Keychain" } }
+        ]},
+
+        { id: 8, kind: "think", nodeIcon: "spark", title: "思考", dur: 3.4, tokens: 780, ctx: 49,
+          text: "日志实锤：Token 刷新瞬间，两个线程同时读 Keychain 触发崩溃——高度怀疑是 refresh 竞态。把三份相关材料并行拉出来确认：TokenManager、AuthInterceptor，再看 ios/Auth 最近的改动记录。",
+          input: { hypothesis: "Token 刷新竞态：并发读 Keychain 触发 EXC_BAD_ACCESS" },
+          output: { next: ["读 TokenManager.swift", "读 AuthInterceptor.swift", "git log ios/Auth/"], parallel: 3 } },
+
+        { id: 9, kind: "parallel", children: [
+          { id: 9, kind: "tool", nodeIcon: "file", title: "read_file", dur: 2.6, tokens: 1240, ctx: 57,
+            args: "ios/Auth/TokenManager.swift（全文）",
+            result: "18  func refresh() async throws -> Token {\n19    if let t = try keychain.read() { return t } // ← 无锁直读\n21    let t = try await api.refreshToken()\n22    try keychain.write(t)\n23  }",
+            input: { path: "ios/Auth/TokenManager.swift" },
+            output: { lines: 96, suspect_line: 19, lock: "none" } },
+          { id: 10, kind: "tool", nodeIcon: "file", title: "read_file", dur: 2.4, tokens: 1020, ctx: 63,
+            args: "ios/Auth/AuthInterceptor.swift（全文）",
+            result: "42  func retry(_ req: Request) async throws {\n43    _ = try await tokenManager.refresh() // ← 每个 401 都触发一次\n44    return try await session.send(req.withToken())\n45  } // 并发请求 → 并发 refresh",
+            input: { path: "ios/Auth/AuthInterceptor.swift" },
+            output: { lines: 74, suspect_line: 43 } },
+          { id: 11, kind: "tool", nodeIcon: "activity", title: "exec", dur: 2.0, tokens: 640, ctx: 67,
+            args: "git log --oneline -20 -- ios/Auth/",
+            result: "$ git log --oneline -20 -- ios/Auth/\n  a3f9c21 并发请求合并（401 批量重试）\n  7bd04e2 Token 刷新改异步\n  51c88d0 Keychain 封装抽离\n  // a3f9c21 合入后开始出现闪退报告",
+            input: { command: "git log --oneline -20 -- ios/Auth/" },
+            output: { commits: 20, suspect_commit: "a3f9c21" } }
+        ]},
+
+        { id: 12, kind: "think", nodeIcon: "spark", title: "思考", dur: 3.0, tokens: 720, ctx: 71,
+          text: "确认无误：TokenManager.refresh() 没有任何锁，AuthInterceptor 在批量 401 重试时会并发触发 refresh，两路同时读 Keychain。改法：给 refresh 加串行队列，并对并发调用做请求去重，同一时刻只真正执行一次。",
+          input: { root_cause: "refresh() 无锁 + 拦截器并发触发 → 并发读 Keychain" },
+          output: { fix: ["refresh 加串行队列", "并发 refresh 请求去重"] } },
+
+        { id: 13, kind: "tool", nodeIcon: "edit", title: "edit_file", dur: 2.8, tokens: 860, ctx: 76,
+          args: "ios/Auth/TokenManager.swift  +14 −3 行",
+          result: "  private let queue = DispatchQueue(label: \"auth.token\")\n+ private var inFlight: Task<Token, Error>?\n  func refresh() async throws -> Token {\n+   if let f = inFlight { return try await f.value } // 并发去重\n    … }",
+          input: { path: "ios/Auth/TokenManager.swift", summary: "refresh 加串行队列 + 请求去重", added: 14, removed: 3 },
+          output: { applied: true, diff_lines: 17 } },
+
+        { id: 14, kind: "think", nodeIcon: "spark", title: "思考", dur: 2.8, tokens: 560, ctx: 79,
+          text: "修复已落盘。接下来并行验证：写一个 50 次并发刷新的回归测试，同时直接跑起来——如果还有残留 race，测试会当场抓住。",
+          input: { verify: "50 次并发 refresh 回归测试" },
+          output: { next: ["写 TokenManagerTests", "跑 xcodebuild test"], parallel: 2 } },
+
+        { id: 15, kind: "parallel", children: [
+          { id: 15, kind: "tool", nodeIcon: "file", title: "write_file", dur: 2.6, tokens: 780, ctx: 83,
+            args: "ios/Auth/TokenManagerTests.swift（新增）",
+            result: "  func testConcurrentRefresh() async {\n    await withTaskGroup(of: Void.self) { g in\n      for _ in 0..<50 { g.addTask { _ = try? await tm.refresh() } }\n    } // 断言：无崩溃、底层刷新只执行 1 次\n  }",
+            input: { path: "ios/Auth/TokenManagerTests.swift", cases: 1, concurrency: 50 },
+            output: { written: true, lines: 42 } },
+          { id: 16, kind: "tool", nodeIcon: "activity", title: "exec", dur: 3.6, tokens: 920, ctx: 86, fail: true,
+            args: "xcodebuild test -only TokenManagerTests",
+            result: "$ xcodebuild test -only TokenManagerTests\n  ✗ testConcurrentRefresh 失败\n  断言：50 次并发中仍有 2 次 race\n  ThreadSanitizer: data race @ Keychain.write\n  ** TEST FAILED **",
+            input: { command: "xcodebuild test -only TokenManagerTests" },
+            output: { error: "assertion_failed", races: 2, sanitizer: "ThreadSanitizer: data race @ Keychain.write" } }
+        ]},
+
+        { id: 17, kind: "think", nodeIcon: "spark", title: "思考", dur: 2.8, tokens: 640, ctx: 88,
+          text: "测试抓住了残留问题：串行队列挡住了读路径，但 Keychain 写入仍有 2 次 race——锁粒度不够。把 Keychain 访问整体改成 barrier 异步写，保证同一时刻只有一个访问者。",
+          input: { diagnosis: "串行队列未覆盖 Keychain 写路径，仍有 2 次 race" },
+          output: { fix: "Keychain 访问改 barrier async 写，排他执行" } },
+
+        { id: 18, kind: "tool", nodeIcon: "edit", title: "edit_file", dur: 2.8, tokens: 840, ctx: 91,
+          args: "ios/Auth/TokenManager.swift  +8 −5 行",
+          result: "  private let kcQueue = DispatchQueue(label: \"auth.keychain\", attributes: .concurrent)\n+ func withKeychain<T>(_ op: () throws -> T) rethrows -> T {\n+   try kcQueue.sync(flags: .barrier) { try op() } // 排他访问\n  }",
+          input: { path: "ios/Auth/TokenManager.swift", summary: "改 barrier async 写，排他访问 Keychain", added: 8, removed: 5 },
+          output: { applied: true, diff_lines: 13 } },
+
+        { id: 19, kind: "tool", nodeIcon: "activity", title: "exec", dur: 3.2, tokens: 880, ctx: 93,
+          args: "xcodebuild test -only TokenManagerTests（第 2 次尝试）",
+          result: "$ xcodebuild test -only TokenManagerTests\n  ✓ testConcurrentRefresh 通过（50 并发，0 race）\n  ✓ testRefreshDedup 通过（底层刷新仅 1 次）\n  ** TEST SUCCEEDED ** · 3.1s",
+          input: { command: "xcodebuild test -only TokenManagerTests", attempt: 2 },
+          output: { passed: 2, failed: 0, races: 0, duration_s: 3.1 } },
+
+        { id: 20, kind: "think", nodeIcon: "spark", title: "思考", dur: 2.8, tokens: 540, ctx: 95,
+          text: "定向测试通过。最后并行收尾：跑全量回归确认没有连带破坏，同时把这次的根因、修复方案和崩溃率数据写成修复报告。",
+          input: { wrap_up: "全量回归 + 修复报告" },
+          output: { next: ["xcodebuild test --scheme App", "生成 reports/login-crash-fix.md"], parallel: 2 } },
+
+        { id: 21, kind: "parallel", children: [
+          { id: 21, kind: "tool", nodeIcon: "activity", title: "exec", dur: 4.2, tokens: 1120, ctx: 97,
+            args: "xcodebuild test --scheme App",
+            result: "$ xcodebuild test --scheme App\n  Executed 312 tests, 0 failures\n  ** TEST SUCCEEDED ** · 48.6s",
+            input: { command: "xcodebuild test --scheme App" },
+            output: { passed: 312, failed: 0, duration_s: 48.6 } },
+          { id: 22, kind: "tool", nodeIcon: "file", title: "write_file", dur: 2.6, tokens: 700, ctx: 98,
+            args: "reports/login-crash-fix.md（新增）",
+            result: "# 登录闪退修复报告\n  根因：Token 刷新竞态，并发读 Keychain\n  修复：串行队列 + 请求去重 + barrier 排他写\n  数据：崩溃率 4.2%（iOS 17.x 占 91%）→ 预计归零",
+            input: { path: "reports/login-crash-fix.md" },
+            output: { written: true, sections: 4 } }
+        ]},
+
+        { id: 23, kind: "assistant", nodeIcon: "check", title: "回复", dur: 3.4, tokens: 460, ctx: 99,
+          text: "修好了，修复报告也生成了。\n\n根因：Token 刷新存在竞态——批量 401 重试时多个请求并发触发 refresh，无锁地同时读写 Keychain，在 iOS 17 上触发 EXC_BAD_ACCESS。\n\n修复：refresh 加串行队列 + 并发去重，Keychain 访问改 barrier 排他写；50 次并发回归测试从 2 次 race 修到 0 race。\n\n数据：近 7 天崩溃率 4.2%（iOS 17.x 占 91%），全量回归 312/312 通过，这条崩溃预计随版本发布归零。",
+          input: null,
+          output: { files_changed: ["ios/Auth/TokenManager.swift", "ios/Auth/TokenManagerTests.swift", "reports/login-crash-fix.md"], tests: "312/312 通过", crash_rate: "4.2% → 预计归零" } }
+      ];
+
+      /* 展开并行组为扁平步骤 */
+      var STEPS = [];
+      EVENTS.forEach(function (e) {
+        if (e.kind === "parallel") e.children.forEach(function (c) { c.parent = e; STEPS.push(c); });
+        else STEPS.push(e);
+      });
+      var TOTAL_DUR = STEPS.reduce(function (s, e) { return s + e.dur; }, 0);
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+      function tagLabel(e) {
+        return { user: "用户", think: "思考", tool: "工具调用", assistant: "回复" }[e.kind] || e.kind;
+      }
+      function kindClass(e) { return e.fail ? "bad" : e.kind === "think" ? "think" : e.kind === "assistant" || e.kind === "user" ? "ok2" : ""; }
+
+      /* ============ DOM 引用 ============ */
+      var wfBody = document.getElementById("wfBody");
+      var sideScroll = document.getElementById("sideScroll");
+      var chatScroll = document.getElementById("chatScroll");
+      var msgUser = document.getElementById("msgUser");
+      var userBubble = document.getElementById("userBubble");
+      var msgAgent = document.getElementById("msgAgent");
+      var agentBubble = document.getElementById("agentBubble");
+      var workingEl = document.getElementById("working");
+      var workingText = document.getElementById("workingText");
+      var liveDot = document.getElementById("liveDot");
+      var elByStep = {}, wfByStep = {};
+
+      userBubble.textContent = EVENTS[0].text;
+
+      /* ============ DAG 图谱：Canvas 神经网络（光球节点 · 触须边 · 脉冲 · 尘埃） ============ */
+      var graphViewport = document.getElementById("graphViewport");
+      var graphCanvas = document.getElementById("graphCanvas");
+      var gtx = graphCanvas.getContext("2d");
+      var zoomPct = document.getElementById("zoomPct");
+      var stepState = {};   /* 步骤状态：pending | active | done | err */
+      var perfT = 0, lastFrameTs = null;
+
+      var stepById = {};
+      STEPS.forEach(function (e) { stepById[e.id] = e; e._frac = 0; stepState[e.id] = "pending"; });
+
+      /* 图的边：主链 + 失败→重试分叉 + 并行扇出/扇入 */
+      var EDGES = [
+        [0, 1],
+        [1, 2], [1, 3], [1, 4], [2, 5], [3, 5], [4, 5],
+        [5, 6], [5, 7], [6, 8], [7, 8],
+        [8, 9], [8, 10], [8, 11], [9, 12], [10, 12], [11, 12],
+        [12, 13], [13, 14],
+        [14, 15], [14, 16], [15, 17], [16, 17],
+        [17, 18], [18, 19], [16, 19, "retry"],
+        [19, 20], [20, 21], [20, 22], [21, 23], [22, 23]
+      ];
+
+      /* 分层：层号 = 从起点出发的最长路径深度 */
+      var levelOf = {};
+      STEPS.forEach(function (e) { levelOf[e.id] = 0; });
+      var moved = true;
+      while (moved) {
+        moved = false;
+        EDGES.forEach(function (ed) {
+          if (levelOf[ed[1]] < levelOf[ed[0]] + 1) { levelOf[ed[1]] = levelOf[ed[0]] + 1; moved = true; }
+        });
+      }
+      var NODE_W = 160, NODE_H = 54, LEVEL_H = 110, WORLD_W = 560, PAD_TOP = 176, NODE_R = 25;
+      var byLevel = {}, maxLevel = 0;
+      STEPS.forEach(function (e) {
+        var L = levelOf[e.id];
+        if (L > maxLevel) maxLevel = L;
+        (byLevel[L] = byLevel[L] || []).push(e);
+      });
+      Object.keys(byLevel).forEach(function (L) {
+        var arr = byLevel[L], gap = 24;
+        var x0 = (WORLD_W - (arr.length * NODE_W + (arr.length - 1) * gap)) / 2;
+        arr.forEach(function (e, i) {
+          e._sibDelay = arr.length > 1 ? i * 0.09 : 0; /* 扇出同层兄弟：触须按伞状开花节奏错开 90ms */
+          e._x = x0 + i * (NODE_W + gap);
+          e._y = PAD_TOP + Number(L) * LEVEL_H;
+          e._cx = e._x + NODE_W / 2;
+          e._cy = e._y + NODE_H / 2;
+        });
+      });
+      var WORLD_H = PAD_TOP + (maxLevel + 1) * LEVEL_H + 14;
+
+      /* 边对象（触须）：grow 0→1 生长，phase 决定摆动与脉冲相位 */
+      var edgeObjs = [], edgesInto = {};
+      EDGES.forEach(function (ed, i) {
+        var o = { a: stepById[ed[0]], b: stepById[ed[1]], retry: ed[2] === "retry", grow: 0, growStart: -1, phase: i * 1.37, idx: i };
+        edgeObjs.push(o);
+        (edgesInto[o.b.id] = edgesInto[o.b.id] || []).push(o);
+      });
+
+      /* ============ 神经核光球：整张图谱的能量中枢 ============ */
+      var ORB = { x: WORLD_W / 2, y: 88 };
+      var orbHot = false;
+      var orbIgnited = false;
+      var orbEdge = { a: null, b: stepById[0], retry: false, grow: 0, growStart: -1, phase: 0.6, idx: -1 };
+      edgeObjs.push(orbEdge);
+      edgesInto[0] = [orbEdge];
+
+      /* 节点视觉状态：scale 与位置都走弹簧（stiffness 62 / 临界阻尼） */
+      STEPS.forEach(function (e) {
+        e._vis = { shown: false, scale: 0, sv: 0, x: e._cx, y: e._cy, vx: 0, vy: 0 };
+      });
+      function parentCenter(e) {
+        var ins = edgesInto[e.id] || [], sx = 0, sy = 0, n = 0;
+        ins.forEach(function (o) { if (o.a) { sx += o.a._cx; sy += o.a._cy; n++; } });
+        return n ? { x: sx / n, y: sy / n } : { x: ORB.x, y: ORB.y };
+      }
+
+      /* 节点配色：低饱和（思考银 / 工具淡蓝 / 用户淡紫 / 回复香槟金 / 错误暗红） */
+      var KIND_STYLE = {
+        user:      { rgb: "195,178,221", darkRgb: "70,58,94" },
+        think:     { rgb: "230,231,227", darkRgb: "84,85,79" },
+        tool:      { rgb: "169,211,228", darkRgb: "51,80,95" },
+        assistant: { rgb: "236,217,166", darkRgb: "107,86,35" }
+      };
+      var ERR_RGB = "240,128,140";
+      function nodeRgb(e) { return stepState[e.id] === "err" ? ERR_RGB : KIND_STYLE[e.kind].rgb; }
+
+      /* 触须配色：按子节点的工具类型分 pastel 专属色（失败/重试红，不进此表） */
+      function toolRgb(title) {
+        if (title === "exec") return "195,188,242";            /* 淡紫 */
+        if (title === "edit_file" || title === "write_file") return "236,201,143"; /* 香槟金 #ecc98f */
+        if (title === "browser.search") return "172,224,207";  /* 淡绿 #ace0cf */
+        return "169,211,228";                                   /* search_code / read_file：淡蓝 #a9d3e4 */
+      }
+      function edgeRgb(o) {
+        if (o.retry) return ERR_RGB;
+        if (!o.a) return "236,217,166";                        /* 光球出发的触须：香槟金 */
+        var b = o.b;
+        if (b.kind === "tool") return toolRgb(b.title);
+        if (b.kind === "assistant") return "236,217,166";
+        return "206,212,224";                                  /* 思考链：银灰 */
+      }
+
+      function nodeTitle(e) {
+        if (e.kind === "tool") return e.title;
+        return { user: "用户消息", think: "思考", assistant: "最终回复" }[e.kind];
+      }
+      function nodeSub(e) {
+        return { user: "User · Turn", think: "Reasoning", tool: "Tool call", assistant: "Assistant" }[e.kind];
+      }
+
+      /* 光球尘埃：约 110 粒，黄金角分布，缓慢外漂 + 透明度正弦呼吸 */
+      var dust = [];
+      for (var di = 0; di < 110; di++) {
+        dust.push({ ang: di * 2.39996, rad: 36 + (di % 41) * 1.05, sp: 2.2 + (di % 5) * 0.9, ph: di * 0.83, sz: 0.7 + (di % 3) * 0.45 });
+      }
+
+      /* 结构标注：香槟金小字标签（失败为红、扇入为绿） */
+      var chipByKey = {
+        fanout3a: { text: "并行扇出 ×3", x: WORLD_W / 2, y: stepById[2]._cy - 51, alpha: 0, target: 0, rgb: "236,217,166" },
+        fanin3a:  { text: "结果扇入 ×3", x: WORLD_W / 2, y: stepById[5]._cy - 51, alpha: 0, target: 0, rgb: "172,224,207" },
+        fanout2a: { text: "并行扇出 ×2", x: WORLD_W / 2, y: stepById[6]._cy - 51, alpha: 0, target: 0, rgb: "236,217,166" },
+        fanin2a:  { text: "结果扇入 ×2", x: WORLD_W / 2, y: stepById[8]._cy - 51, alpha: 0, target: 0, rgb: "172,224,207" },
+        fanout3b: { text: "并行扇出 ×3", x: WORLD_W / 2, y: stepById[9]._cy - 51, alpha: 0, target: 0, rgb: "236,217,166" },
+        fanin3b:  { text: "结果扇入 ×3", x: WORLD_W / 2, y: stepById[12]._cy - 51, alpha: 0, target: 0, rgb: "172,224,207" },
+        fanout2b: { text: "并行扇出 ×2", x: WORLD_W / 2, y: stepById[15]._cy - 51, alpha: 0, target: 0, rgb: "236,217,166" },
+        retry:    { text: "✕ 失败 → 分叉重试", x: stepById[19]._cx + 96, y: stepById[19]._cy - 51, alpha: 0, target: 0, rgb: "240,128,140" },
+        fanout2c: { text: "并行扇出 ×2", x: WORLD_W / 2, y: stepById[21]._cy - 51, alpha: 0, target: 0, rgb: "236,217,166" },
+        fanin2c:  { text: "结果扇入 ×2", x: WORLD_W / 2, y: stepById[23]._cy - 51, alpha: 0, target: 0, rgb: "172,224,207" }
+      };
+      /* 结构标注在哪个节点出现时亮起 */
+      var CHIP_ON = { 2: "fanout3a", 5: "fanin3a", 6: "fanout2a", 8: "fanin2a", 9: "fanout3b", 12: "fanin3b", 15: "fanout2b", 19: "retry", 21: "fanout2c", 23: "fanin2c" };
+
+      /* 触须几何：三次贝塞尔，控制点随时间轻微正弦摆动 */
+      function bezGeom(o) {
+        var a = o.a, b = o.b;
+        var x1 = a ? a._vis.x : ORB.x;
+        var y1 = a ? a._vis.y + NODE_R * a._vis.scale : ORB.y + 40;
+        var x2 = b._vis.x, y2 = b._vis.y - NODE_R * Math.max(b._vis.scale, 0.15);
+        var dy = Math.max(26, (y2 - y1) * 0.52);
+        var sw = Math.sin(perfT * 0.9 + o.phase) * 5.5;
+        return { x0: x1, y0: y1, x1: x1 + sw, y1: y1 + dy, x2: x2 - sw, y2: y2 - dy, x3: x2, y3: y2 };
+      }
+      function bezPt(g, u) {
+        var v = 1 - u;
+        return {
+          x: v * v * v * g.x0 + 3 * v * v * u * g.x1 + 3 * v * u * u * g.x2 + u * u * u * g.x3,
+          y: v * v * v * g.y0 + 3 * v * v * u * g.y1 + 3 * v * u * u * g.y2 + u * u * u * g.y3
+        };
+      }
+      function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+      /* 节点绽放时的粒子迸发（Canvas 粒子，随渲染循环更新） */
+      var bursts = [];
+      function burstAt(x, y) {
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        for (var i = 0; i < 12; i++) {
+          var ang = (Math.PI * 2 * i) / 12 + Math.random() * 0.5;
+          var sp = 34 + Math.random() * 46;
+          bursts.push({ x: x, y: y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 1, gold: i % 3 === 0 });
+        }
+      }
+
+      /* 弹簧与生长推进：scale 弹簧 stiffness 62、临界阻尼；位置弹簧略硬 */
+      function updateSprings(dt) {
+        var K = 62, C = 2 * Math.sqrt(62);
+        var KP = 120, CP = 2 * Math.sqrt(120);
+        STEPS.forEach(function (e) {
+          var v = e._vis;
+          if (!v.shown && v.scale <= 0.001) return;
+          var tgt = v.shown ? 1 : 0;
+          v.sv += (-K * (v.scale - tgt) - C * v.sv) * dt;
+          v.scale = Math.max(0, v.scale + v.sv * dt);
+          v.vx += (-KP * (v.x - e._cx) - CP * v.vx) * dt;
+          v.x += v.vx * dt;
+          v.vy += (-KP * (v.y - e._cy) - CP * v.vy) * dt;
+          v.y += v.vy * dt;
+        });
+        edgeObjs.forEach(function (o) {
+          if (o.growStart >= 0 && perfT >= o.growStart && o.grow < 1) o.grow = Math.min(1, o.grow + dt / 0.55);
+        });
+        Object.keys(chipByKey).forEach(function (k) {
+          var c = chipByKey[k];
+          c.alpha += (c.target - c.alpha) * Math.min(1, dt * 5);
+        });
+        dust.forEach(function (p) {
+          p.rad += p.sp * dt;
+          if (p.rad > 128) p.rad = 36;
+        });
+        for (var bi = bursts.length - 1; bi >= 0; bi--) {
+          var b = bursts[bi];
+          b.life -= dt * 1.5;
+          if (b.life <= 0) { bursts.splice(bi, 1); continue; }
+          b.x += b.vx * dt; b.y += b.vy * dt;
+          b.vx *= (1 - 2.4 * dt); b.vy *= (1 - 2.4 * dt);
+        }
+      }
+
+      /* ---------- 绘制 ---------- */
+      var cvW = 0, cvH = 0, dpr = 1, compactView = false;
+      var viewCur = { x: 0, y: 12, k: 1 }, viewEase = false;
+      function sizeCanvas() {
+        dpr = Math.min(2, window.devicePixelRatio || 1);
+        cvW = graphViewport.clientWidth; cvH = graphViewport.clientHeight;
+        compactView = cvW < 420; /* 窄屏：光球缩小 25%、节点字体降一档 */
+        graphCanvas.width = Math.max(1, Math.round(cvW * dpr));
+        graphCanvas.height = Math.max(1, Math.round(cvH * dpr));
+      }
+
+      function drawOrb() {
+        var os = compactView ? 0.75 : 1;
+        var period = orbHot ? 1.6 : 4.2;
+        var br = 1 + (orbHot ? 0.07 : 0.045) * Math.sin(perfT * 6.2832 / period);
+        /* 首帧点亮：0.8s 内从暗到亮，点亮瞬间迸一次火花，之后才开始节点生长 */
+        var ig = Math.min(1, perfT / 0.8);
+        ig = 1 - Math.pow(1 - ig, 3);
+        if (ig >= 1 && !orbIgnited) { orbIgnited = true; burstAt(ORB.x, ORB.y); }
+        var dim = 0.15 + 0.85 * ig;
+        gtx.save();
+        gtx.globalCompositeOperation = "lighter";
+        /* 尘埃（数量不变，亮度压低 30%，不抢主角） */
+        dust.forEach(function (p) {
+          var a = (0.08 + 0.17 * (0.5 + 0.5 * Math.sin(perfT * 0.9 + p.ph))) * 0.7 * dim;
+          gtx.fillStyle = "rgba(236,217,166," + a.toFixed(3) + ")";
+          gtx.beginPath();
+          gtx.arc(ORB.x + Math.cos(p.ang) * p.rad * os, ORB.y + Math.sin(p.ang) * p.rad * 0.82 * os, p.sz, 0, 6.2832);
+          gtx.fill();
+        });
+        /* 外层辉光 */
+        var glowR = 122 * os * br;
+        var glow = gtx.createRadialGradient(ORB.x, ORB.y, 0, ORB.x, ORB.y, glowR);
+        glow.addColorStop(0, "rgba(236,217,166," + ((orbHot ? 0.30 : 0.22) * dim).toFixed(3) + ")");
+        glow.addColorStop(0.5, "rgba(236,217,166," + (0.08 * dim).toFixed(3) + ")");
+        glow.addColorStop(1, "rgba(236,217,166,0)");
+        gtx.fillStyle = glow;
+        gtx.beginPath(); gtx.arc(ORB.x, ORB.y, glowR, 0, 6.2832); gtx.fill();
+        gtx.restore();
+        /* 球体：中心白热 → 暖金 → 香槟金 #ecd9a6 → 透明 */
+        gtx.save();
+        gtx.globalAlpha = dim;
+        var coreR = 42 * os * br;
+        var core = gtx.createRadialGradient(ORB.x - 10 * os, ORB.y - 12 * os, 2, ORB.x, ORB.y, coreR);
+        core.addColorStop(0, "#ffffff");
+        core.addColorStop(0.28, "#fdf3cd");
+        core.addColorStop(0.52, "#f6dd9a");
+        core.addColorStop(0.72, "#ecd9a6");
+        core.addColorStop(0.88, "rgba(216,184,110,0.55)");
+        core.addColorStop(1, "rgba(216,184,110,0)");
+        gtx.fillStyle = core;
+        gtx.beginPath(); gtx.arc(ORB.x, ORB.y, coreR, 0, 6.2832); gtx.fill();
+        gtx.restore();
+        /* 暖金内焰：球心偏下的一团呼吸暖光 */
+        gtx.save();
+        gtx.globalCompositeOperation = "lighter";
+        gtx.globalAlpha = dim;
+        var fl = 1 + 0.1 * Math.sin(perfT * 2.3);
+        var flameR = 27 * os * fl;
+        var flame = gtx.createRadialGradient(ORB.x, ORB.y + 7 * os, 0, ORB.x, ORB.y + 7 * os, flameR);
+        flame.addColorStop(0, "rgba(255,205,110,0.5)");
+        flame.addColorStop(0.55, "rgba(242,178,84,0.22)");
+        flame.addColorStop(1, "rgba(242,178,84,0)");
+        gtx.fillStyle = flame;
+        gtx.beginPath(); gtx.arc(ORB.x, ORB.y + 7 * os, flameR, 0, 6.2832); gtx.fill();
+        gtx.restore();
+        /* 神经丝球面 mesh：细银线织出的经线（缓慢自转）+ 纬线，包裹球体 */
+        var MR = 54 * os * br;
+        gtx.save();
+        gtx.globalAlpha = dim;
+        gtx.lineWidth = 0.7;
+        for (var mi = 0; mi < 6; mi++) {
+          var mph = perfT * 0.22 + mi * Math.PI / 6;
+          var mrx = Math.max(1, Math.abs(Math.cos(mph)) * MR);
+          gtx.strokeStyle = "rgba(208,216,230,0.20)";
+          gtx.beginPath(); gtx.ellipse(ORB.x, ORB.y, mrx, MR, 0, 0, 6.2832); gtx.stroke();
+        }
+        for (var mj = -2; mj <= 2; mj++) {
+          var myo = mj * MR * 0.38;
+          var mrr = Math.sqrt(Math.max(1, MR * MR - myo * myo));
+          gtx.strokeStyle = "rgba(208,216,230,0.15)";
+          gtx.beginPath(); gtx.ellipse(ORB.x, ORB.y + myo, mrr, mrr * 0.30, 0, 0, 6.2832); gtx.stroke();
+        }
+        gtx.restore();
+        /* 双层光环 */
+        gtx.save();
+        gtx.globalAlpha = dim;
+        gtx.strokeStyle = "rgba(236,217,166,0.34)"; gtx.lineWidth = 1;
+        gtx.beginPath(); gtx.arc(ORB.x, ORB.y, 58 * os * br, 0, 6.2832); gtx.stroke();
+        gtx.strokeStyle = "rgba(236,217,166,0.15)";
+        gtx.beginPath(); gtx.arc(ORB.x, ORB.y, 74 * os / br, 0, 6.2832); gtx.stroke();
+        gtx.restore();
+        gtx.save();
+        gtx.globalAlpha = dim;
+        gtx.fillStyle = "rgba(169,170,178,0.9)";
+        gtx.font = "600 9.5px ui-monospace, Menlo, monospace";
+        gtx.textAlign = "center";
+        gtx.fillText("AGENT 核心", ORB.x, compactView ? ORB.y + 96 * os : ORB.y - 86 * os);
+        gtx.restore();
+        gtx.textAlign = "left";
+      }
+
+      function drawPulse(g, u, rgb, r) {
+        var a = Math.sin(u * Math.PI);
+        if (a <= 0.02) return;
+        var p = bezPt(g, u);
+        gtx.save();
+        gtx.globalCompositeOperation = "lighter";
+        var gr = gtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3.4);
+        gr.addColorStop(0, "rgba(" + rgb + "," + (0.95 * a).toFixed(3) + ")");
+        gr.addColorStop(1, "rgba(" + rgb + ",0)");
+        gtx.fillStyle = gr;
+        gtx.beginPath(); gtx.arc(p.x, p.y, r * 3.4, 0, 6.2832); gtx.fill();
+        gtx.restore();
+      }
+
+      function drawEdges() {
+        edgeObjs.forEach(function (o) {
+          if (o.grow <= 0) return;
+          var g = bezGeom(o);
+          var gr = easeOut(o.grow);
+          var SEG = 26, upto = Math.max(1, Math.floor(SEG * gr));
+          function trace() {
+            gtx.beginPath();
+            var p0 = bezPt(g, 0);
+            gtx.moveTo(p0.x, p0.y);
+            for (var i = 1; i <= upto; i++) { var p = bezPt(g, (i / SEG) * gr); gtx.lineTo(p.x, p.y); }
+          }
+          var active = stepState[o.b.id] === "active";
+          var rgb = edgeRgb(o);
+          /* 宽的模糊辉光层（触须色按子节点工具类型分 pastel） */
+          gtx.save();
+          gtx.shadowBlur = 12;
+          gtx.strokeStyle = "rgba(" + rgb + "," + (o.retry ? 0.20 : active ? 0.22 : 0.10) + ")";
+          gtx.shadowColor = "rgba(" + rgb + ",0.85)";
+          gtx.lineWidth = 6;
+          trace(); gtx.stroke();
+          gtx.restore();
+          /* 细的实线核心层（重试为红色虚线） */
+          if (o.retry) { gtx.setLineDash([6, 5]); gtx.strokeStyle = "rgba(240,128,140,0.85)"; }
+          else if (active) { gtx.strokeStyle = "rgba(" + rgb + ",0.95)"; }
+          else gtx.strokeStyle = "rgba(" + rgb + ",0.55)";
+          gtx.lineWidth = active ? 2.2 : 1.7;
+          trace(); gtx.stroke();
+          gtx.setLineDash([]);
+          /* 箭头 */
+          if (gr > 0.96) {
+            var pe = bezPt(g, 1), pb = bezPt(g, 0.94);
+            var ang = Math.atan2(pe.y - pb.y, pe.x - pb.x);
+            gtx.fillStyle = "rgba(" + rgb + ",0.85)";
+            gtx.beginPath();
+            gtx.moveTo(pe.x, pe.y);
+            gtx.lineTo(pe.x - 8 * Math.cos(ang - 0.42), pe.y - 8 * Math.sin(ang - 0.42));
+            gtx.lineTo(pe.x - 8 * Math.cos(ang + 0.42), pe.y - 8 * Math.sin(ang + 0.42));
+            gtx.closePath(); gtx.fill();
+          }
+          /* 脉冲：2 颗向外 + 1 颗向内，跟随触须色，更亮更小，alpha = sin(u·π) */
+          if (o.grow >= 1) {
+            var speed = active ? 0.55 : 0.30;
+            for (var i = 0; i < 2; i++) {
+              drawPulse(g, (perfT * speed + o.idx * 0.23 + i * 0.5) % 1, rgb, 1.7);
+            }
+            drawPulse(g, 1 - ((perfT * speed * 0.8 + o.idx * 0.41) % 1), rgb, 1.4);
+          }
+        });
+      }
+
+      function drawGlyph(e, x, y, r) {
+        gtx.save();
+        gtx.strokeStyle = "rgba(14,16,20,0.78)";
+        gtx.fillStyle = "rgba(14,16,20,0.78)";
+        gtx.lineWidth = 2; gtx.lineCap = "round"; gtx.lineJoin = "round";
+        var s = r * 0.5;
+        if (e.kind === "user") {
+          gtx.beginPath(); gtx.arc(x, y - s * 0.35, s * 0.42, 0, 6.2832); gtx.stroke();
+          gtx.beginPath(); gtx.arc(x, y + s * 1.05, s * 0.78, Math.PI * 1.15, Math.PI * 1.85); gtx.stroke();
+        } else if (e.kind === "think") {
+          gtx.beginPath();
+          gtx.moveTo(x, y - s);
+          gtx.quadraticCurveTo(x + s * 0.16, y - s * 0.16, x + s, y);
+          gtx.quadraticCurveTo(x + s * 0.16, y + s * 0.16, x, y + s);
+          gtx.quadraticCurveTo(x - s * 0.16, y + s * 0.16, x - s, y);
+          gtx.quadraticCurveTo(x - s * 0.16, y - s * 0.16, x, y - s);
+          gtx.fill();
+        } else if (e.kind === "tool") {
+          gtx.font = "700 " + Math.round(r * 0.62) + "px ui-monospace, Menlo, monospace";
+          gtx.textAlign = "center"; gtx.textBaseline = "middle";
+          gtx.fillText(">_", x, y + 1);
+          gtx.textAlign = "left"; gtx.textBaseline = "alphabetic";
+        } else {
+          gtx.beginPath();
+          gtx.moveTo(x - s * 0.7, y + s * 0.05);
+          gtx.lineTo(x - s * 0.2, y + s * 0.55);
+          gtx.lineTo(x + s * 0.75, y - s * 0.5);
+          gtx.stroke();
+        }
+        gtx.restore();
+      }
+
+      function drawNodes() {
+        STEPS.forEach(function (e) {
+          var v = e._vis;
+          if (v.scale <= 0.01) return;
+          var st = stepState[e.id];
+          var rgb = nodeRgb(e);
+          var dark = st === "err" ? "94,43,49" : KIND_STYLE[e.kind].darkRgb;
+          var R = NODE_R * v.scale;
+          /* 外层辉光（节点色约 40% alpha，加色混合） */
+          gtx.save();
+          gtx.globalCompositeOperation = "lighter";
+          var glow = gtx.createRadialGradient(v.x, v.y, 0, v.x, v.y, R * 2.7);
+          glow.addColorStop(0, "rgba(" + rgb + "," + (st === "active" ? 0.36 : 0.20) + ")");
+          glow.addColorStop(1, "rgba(" + rgb + ",0)");
+          gtx.fillStyle = glow;
+          gtx.beginPath(); gtx.arc(v.x, v.y, R * 2.7, 0, 6.2832); gtx.fill();
+          gtx.restore();
+          /* 球体：半透明线框感——填充压低透明度，只保留左上高光 + 外层辉光 */
+          var body = gtx.createRadialGradient(v.x - R * 0.38, v.y - R * 0.4, R * 0.1, v.x, v.y, R * 1.05);
+          body.addColorStop(0, "rgba(255,255,255,0.95)");
+          body.addColorStop(0.32, "rgba(" + rgb + ",0.52)");
+          body.addColorStop(0.78, "rgba(" + rgb + ",0.30)");
+          body.addColorStop(1, "rgba(" + dark + ",0.72)");
+          gtx.fillStyle = body;
+          gtx.beginPath(); gtx.arc(v.x, v.y, R, 0, 6.2832); gtx.fill();
+          /* 线框感：边缘描线 + 球面经纬细线（半径过小时跳过，避免负半径） */
+          if (R > 2) {
+            gtx.strokeStyle = "rgba(" + rgb + ",0.6)"; gtx.lineWidth = 1;
+            gtx.beginPath(); gtx.arc(v.x, v.y, R - 0.5, 0, 6.2832); gtx.stroke();
+            gtx.strokeStyle = "rgba(255,255,255,0.15)";
+            gtx.beginPath(); gtx.ellipse(v.x, v.y, R * 0.45, R - 1, 0, 0, 6.2832); gtx.stroke();
+            gtx.beginPath(); gtx.ellipse(v.x, v.y, R - 1, R * 0.45, 0, 0, 6.2832); gtx.stroke();
+          }
+          if (selected === e) {
+            gtx.strokeStyle = "rgba(236,217,166,0.95)"; gtx.lineWidth = 1.6;
+            gtx.beginPath(); gtx.arc(v.x, v.y, R + 4, 0, 6.2832); gtx.stroke();
+          }
+          if (st === "active") {
+            gtx.strokeStyle = "rgba(244,216,148,0.9)"; gtx.lineWidth = 2;
+            gtx.beginPath(); gtx.arc(v.x, v.y, R + 5, perfT * 2.6, perfT * 2.6 + 1.9); gtx.stroke();
+            var rp = (perfT % 1.6) / 1.6;
+            gtx.strokeStyle = "rgba(236,217,166," + (0.5 * (1 - rp)).toFixed(3) + ")";
+            gtx.lineWidth = 1.4;
+            gtx.beginPath(); gtx.arc(v.x, v.y, R + 4 + rp * 15, 0, 6.2832); gtx.stroke();
+          }
+          drawGlyph(e, v.x, v.y, R);
+          if (st === "done" || st === "err") {
+            var bx = v.x + R * 0.74, by = v.y + R * 0.74;
+            gtx.fillStyle = st === "done" ? "#20382a" : "#3d2226";
+            gtx.strokeStyle = st === "done" ? "rgba(143,214,164,0.9)" : "rgba(240,128,140,0.9)";
+            gtx.lineWidth = 1.2;
+            gtx.beginPath(); gtx.arc(bx, by, 7, 0, 6.2832); gtx.fill(); gtx.stroke();
+            gtx.strokeStyle = st === "done" ? "#8fd6a4" : "#f28b96";
+            gtx.beginPath();
+            if (st === "done") { gtx.moveTo(bx - 3.4, by); gtx.lineTo(bx - 1, by + 2.6); gtx.lineTo(bx + 3.6, by - 2.8); }
+            else { gtx.moveTo(bx - 2.8, by - 2.8); gtx.lineTo(bx + 2.8, by + 2.8); gtx.moveTo(bx + 2.8, by - 2.8); gtx.lineTo(bx - 2.8, by + 2.8); }
+            gtx.stroke();
+          }
+          /* 标签：标题 + 类型 · 耗时 */
+          gtx.globalAlpha = Math.min(1, v.scale * 1.5);
+          gtx.fillStyle = "#edece7";
+          gtx.font = "650 " + (compactView ? 11 : 12.5) + "px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
+          gtx.fillText(nodeTitle(e), v.x + R + 10, v.y - 1);
+          var sub = nodeSub(e);
+          if (st === "active") sub += " · " + (e.dur * (e._frac || 0)).toFixed(1) + "s";
+          else if (st === "done" || st === "err") sub += " · " + e.dur.toFixed(1) + "s";
+          gtx.fillStyle = "rgba(150,153,163,0.95)";
+          gtx.font = (compactView ? 9 : 10) + "px ui-monospace, Menlo, monospace";
+          gtx.fillText(sub, v.x + R + 10, v.y + 14);
+          gtx.globalAlpha = 1;
+        });
+      }
+
+      function drawChips() {
+        Object.keys(chipByKey).forEach(function (k) {
+          var c = chipByKey[k];
+          if (c.alpha <= 0.01) return;
+          gtx.save();
+          gtx.globalAlpha = Math.min(1, c.alpha);
+          gtx.font = "700 10.5px -apple-system, 'PingFang SC', sans-serif";
+          var w = gtx.measureText(c.text).width + 20;
+          var x = c.x - w / 2, y = c.y - 10;
+          gtx.beginPath();
+          if (gtx.roundRect) gtx.roundRect(x, y, w, 20, 10); else gtx.rect(x, y, w, 20);
+          /* 半透明深色底 + 柔和投影：压住身后的节点/触须，任何缩放下可读 */
+          gtx.shadowColor = "rgba(0,0,0,0.55)"; gtx.shadowBlur = 6;
+          gtx.fillStyle = "rgba(10,11,14,0.88)";
+          gtx.fill();
+          gtx.shadowBlur = 0;
+          gtx.strokeStyle = "rgba(" + c.rgb + ",0.5)";
+          gtx.lineWidth = 1;
+          gtx.stroke();
+          gtx.fillStyle = "rgba(" + c.rgb + ",1)";
+          gtx.textAlign = "center";
+          gtx.fillText(c.text, c.x, c.y + 3.5);
+          gtx.restore();
+        });
+        gtx.textAlign = "left";
+      }
+
+      function drawScene() {
+        gtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        gtx.clearRect(0, 0, cvW, cvH);
+        gtx.translate(viewCur.x, viewCur.y);
+        gtx.scale(viewCur.k, viewCur.k);
+        /* 光球 → 已出现节点的极淡触须（当前步亮起） */
+        STEPS.forEach(function (e) {
+          var v = e._vis;
+          if (!v.shown) return;
+          var act = stepState[e.id] === "active";
+          gtx.strokeStyle = act ? "rgba(236,217,166,0.40)" : "rgba(236,217,166,0.07)";
+          gtx.lineWidth = 1;
+          gtx.beginPath();
+          gtx.moveTo(ORB.x, ORB.y + 38);
+          gtx.quadraticCurveTo(ORB.x + (v.x - ORB.x) * 0.3, ORB.y + (v.y - ORB.y) * 0.55, v.x, v.y - NODE_R * v.scale - 2);
+          gtx.stroke();
+        });
+        drawOrb();
+        drawEdges();
+        bursts.forEach(function (b) {
+          gtx.globalAlpha = Math.max(0, b.life);
+          gtx.fillStyle = b.gold ? "#ecd9a6" : "#c9cedb";
+          gtx.beginPath(); gtx.arc(b.x, b.y, 2.4 * b.life + 0.6, 0, 6.2832); gtx.fill();
+        });
+        gtx.globalAlpha = 1;
+        drawNodes();
+        drawChips();
+      }
+
+      function frame(ts) {
+        requestAnimationFrame(frame);
+        if (lastFrameTs === null) lastFrameTs = ts;
+        var dt = Math.min(0.05, (ts - lastFrameTs) / 1000);
+        lastFrameTs = ts;
+        perfT += dt;
+        if (viewEase) {
+          var f = 1 - Math.exp(-dt * 7);
+          viewCur.x += (view.x - viewCur.x) * f;
+          viewCur.y += (view.y - viewCur.y) * f;
+          viewCur.k += (view.k - viewCur.k) * f;
+          if (Math.abs(view.x - viewCur.x) < 0.4 && Math.abs(view.y - viewCur.y) < 0.4 && Math.abs(view.k - viewCur.k) < 0.004) {
+            viewCur.x = view.x; viewCur.y = view.y; viewCur.k = view.k; viewEase = false;
+          }
+        } else {
+          viewCur.x = view.x; viewCur.y = view.y; viewCur.k = view.k;
+        }
+        updateSprings(dt);
+        drawScene();
+      }
+      sizeCanvas();
+      window.addEventListener("resize", sizeCanvas);
+      requestAnimationFrame(frame);
+
+      /* ============ 视图：平移 / 缩放 / 播放跟随 ============ */
+      var view = { x: 0, y: 12, k: 1 };
+      var follow = true, dragMoved = 0, drag = null;
+
+      function applyView(anim) {
+        if (anim) viewEase = true;
+        else { viewEase = false; viewCur.x = view.x; viewCur.y = view.y; viewCur.k = view.k; }
+        zoomPct.textContent = Math.round(view.k * 100) + "%";
+      }
+      function initView() {
+        var vw = graphViewport.clientWidth || WORLD_W;
+        view.k = Math.min(1.05, Math.max(0.7, vw / (WORLD_W + 46)));
+        view.x = (vw - WORLD_W * view.k) / 2;
+        view.y = 12;
+        follow = true;
+        applyView(false);
+      }
+      function fitView() {
+        var vw = graphViewport.clientWidth, vh = graphViewport.clientHeight, pad = 30;
+        var k = Math.min((vw - pad) / WORLD_W, (vh - pad) / WORLD_H, 1.3);
+        view.k = Math.max(k, 0.28);
+        view.x = (vw - WORLD_W * view.k) / 2;
+        view.y = (vh - WORLD_H * view.k) / 2;
+        follow = false;
+        applyView(true);
+      }
+      function ensureVisible(e) {
+        if (!follow) return;
+        var vw = graphViewport.clientWidth, vh = graphViewport.clientHeight, m = 14;
+        var nx = e._cx * view.k + view.x, ny = e._cy * view.k + view.y;
+        var hw = 100 * view.k, hh = 36 * view.k;
+        var dx = 0, dy = 0;
+        if (nx - hw < m) dx = m - (nx - hw); else if (nx + hw > vw - m) dx = vw - m - nx - hw;
+        if (ny - hh < m) dy = m - (ny - hh); else if (ny + hh > vh - m) dy = vh - m - ny - hh;
+        if (dx || dy) { view.x += dx; view.y += dy; applyView(true); }
+      }
+      function panToNode(e) {
+        var vw = graphViewport.clientWidth, vh = graphViewport.clientHeight;
+        view.x = vw / 2 - e._cx * view.k;
+        view.y = vh / 2 - e._cy * view.k;
+        applyView(true);
+      }
+      graphViewport.addEventListener("pointerdown", function (ev) {
+        if (ev.target.closest(".graph-tools")) return;
+        drag = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y };
+        dragMoved = 0;
+      });
+      graphViewport.addEventListener("pointermove", function (ev) {
+        if (!drag) return;
+        var dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+        dragMoved = Math.max(dragMoved, Math.abs(dx) + Math.abs(dy));
+        if (dragMoved > 4) {
+          /* 真正开始拖动后才捕获指针，否则会吞掉节点/按钮的 click */
+          if (!drag.captured) {
+            drag.captured = true;
+            try { graphViewport.setPointerCapture(ev.pointerId); } catch (err) {}
+            graphViewport.classList.add("grabbing");
+          }
+          follow = false;
+          view.x = drag.vx + dx;
+          view.y = drag.vy + dy;
+          applyView(false);
+        }
+      });
+      function endDrag() { drag = null; graphViewport.classList.remove("grabbing"); }
+      graphViewport.addEventListener("pointerup", function (ev) {
+        var wasDrag = dragMoved;
+        endDrag();
+        if (wasDrag > 6) return;
+        /* Canvas 节点命中：球体或其右侧标签 */
+        var r = graphViewport.getBoundingClientRect();
+        var wx = (ev.clientX - r.left - viewCur.x) / viewCur.k;
+        var wy = (ev.clientY - r.top - viewCur.y) / viewCur.k;
+        for (var i = STEPS.length - 1; i >= 0; i--) {
+          var e = STEPS[i], v = e._vis;
+          if (!v.shown) continue;
+          var dx = wx - v.x, dy = wy - v.y;
+          if (dx * dx + dy * dy < 34 * 34) { selectStep(e); return; }
+          if (wx > v.x + NODE_R && wx < v.x + NODE_R + 150 && Math.abs(wy - v.y) < 18) { selectStep(e); return; }
+        }
+      });
+      graphViewport.addEventListener("pointercancel", endDrag);
+      graphViewport.addEventListener("wheel", function (ev) {
+        ev.preventDefault();
+        follow = false;
+        var r = graphViewport.getBoundingClientRect();
+        var mx = ev.clientX - r.left, my = ev.clientY - r.top;
+        var k2 = Math.min(2.4, Math.max(0.28, view.k * (ev.deltaY < 0 ? 1.13 : 0.885)));
+        view.x = mx - (mx - view.x) * (k2 / view.k);
+        view.y = my - (my - view.y) * (k2 / view.k);
+        view.k = k2;
+        applyView(false);
+      }, { passive: false });
+      function zoomBy(f) {
+        var vw = graphViewport.clientWidth, vh = graphViewport.clientHeight;
+        var k2 = Math.min(2.4, Math.max(0.28, view.k * f));
+        view.x = vw / 2 - (vw / 2 - view.x) * (k2 / view.k);
+        view.y = vh / 2 - (vh / 2 - view.y) * (k2 / view.k);
+        view.k = k2;
+        follow = false;
+        applyView(true);
+      }
+      document.getElementById("zoomIn").addEventListener("click", function () { zoomBy(1.25); });
+      document.getElementById("zoomOut").addEventListener("click", function () { zoomBy(0.8); });
+      document.getElementById("fitBtn").addEventListener("click", fitView);
+      initView();
+
+      /* 瀑布图行（全部预建，宽度随播放推进；点击联动图谱定位） */
+      var cursor = 0;
+      STEPS.forEach(function (e) {
+        e._start = cursor; cursor += e.dur;
+        var row = document.createElement("div");
+        row.className = "wf-row";
+        var name = e.kind === "tool" ? e.title : tagLabel(e);
+        row.innerHTML = '<span class="n" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>' +
+          '<span class="wf-track"><span class="wf-bar ' + kindClass(e) + '" style="left:' + (e._start / TOTAL_DUR * 100) + '%;width:0%"></span></span>' +
+          '<span class="d">' + e.dur.toFixed(1) + "s</span>";
+        row.addEventListener("click", function () { selectStep(e); panToNode(e); });
+        wfBody.appendChild(row);
+        wfByStep[e.id] = row;
+      });
+
+      /* ============ 节点检查器：入参 / 出参 / 实时内容 ============ */
+      var inspTag = document.getElementById("inspTag");
+      var inspTitle = document.getElementById("inspTitle");
+      var inspStatus = document.getElementById("inspStatus");
+      var inspBody = document.getElementById("inspBody");
+      var inspTab = "input";
+      var selected = null;
+
+      function jsonHtml(obj) {
+        if (obj === null || obj === undefined) return '<span style="color:var(--s-ink3)">（无）</span>';
+        var s = escapeHtml(JSON.stringify(obj, null, 2));
+        return s.replace(/&quot;([^&]+?)&quot;:/g, '<span class="jk">"$1"</span>:')
+                .replace(/: &quot;(.*?)&quot;/g, ': <span class="js">"$1"</span>')
+                .replace(/: (-?\d[\d.]*)/g, ': <span class="jn">$1</span>')
+                .replace(/: (true|false|null)/g, ': <span class="jb">$1</span>');
+      }
+
+      function stepStatus(e) {
+        return { active: "运行中", done: "完成", err: "失败" }[stepState[e.id]] || "未开始";
+      }
+
+      function renderInspector(e) {
+        inspTag.className = "tag " + e.kind;
+        inspTag.textContent = tagLabel(e);
+        inspTitle.textContent = nodeTitle(e);
+        inspTitle.title = nodeTitle(e);
+        inspStatus.textContent = stepStatus(e) + " · T+" + e._start.toFixed(1) + "s";
+        var live = "";
+        if (e.kind === "think") live = '<div class="live-text" id="liveText"></div>';
+        else if (e.kind === "tool") live = '<div class="toolargs">' + escapeHtml(e.args) + '</div><div class="result-box" id="liveResult"></div>';
+        else if (e.kind === "user") live = '<div class="live-text">' + escapeHtml(e.text) + "</div>";
+        else live = '<div class="sync-note">回复正文在左侧对话区逐字呈现，图谱节点只标记这一步的完成。</div>';
+        inspBody.innerHTML = live +
+          '<div class="insp-sec"><div class="insp-tabs">' +
+            '<button data-t="input" class="' + (inspTab === "input" ? "on" : "") + '">入参 input</button>' +
+            '<button data-t="output" class="' + (inspTab === "output" ? "on" : "") + '">出参 output</button>' +
+          "</div>" +
+          '<pre class="json">' + jsonHtml(inspTab === "input" ? e.input : e.output) + "</pre>" +
+          '<div class="insp-meta">' +
+            "<div><div class='k'>状态</div><div class='v'>" + stepStatus(e) + "</div></div>" +
+            "<div><div class='k'>耗时</div><div class='v'>" + e.dur.toFixed(1) + "s</div></div>" +
+            "<div><div class='k'>起始时刻</div><div class='v'>T+" + e._start.toFixed(1) + "s</div></div>" +
+            "<div><div class='k'>Token</div><div class='v'>" + e.tokens.toLocaleString() + "</div></div>" +
+          "</div></div>";
+        inspBody.querySelectorAll(".insp-tabs button").forEach(function (b) {
+          b.addEventListener("click", function () {
+            inspTab = b.getAttribute("data-t");
+            renderInspector(e);
+          });
+        });
+        syncInspector(e);
+      }
+
+      function syncInspector(e) {
+        if (selected !== e) return;
+        var st = stepStatus(e);
+        inspStatus.textContent = st + " · T+" + e._start.toFixed(1) + "s";
+        if (e.kind === "think") {
+          var lt = document.getElementById("liveText");
+          if (lt) lt.textContent = st === "完成" ? e.text : e.text.slice(0, Math.floor(e.text.length * (e._frac || 0)));
+        } else if (e.kind === "tool") {
+          var rb = document.getElementById("liveResult");
+          if (rb) {
+            if (st === "完成" || st === "失败") {
+              rb.className = "result-box show";
+              rb.innerHTML = e.fail
+                ? '<span class="err-line">' + escapeHtml(e.result) + "</span>"
+                : escapeHtml(e.result);
+            } else if (st === "运行中") {
+              rb.className = "result-box show";
+              rb.textContent = "执行中…";
+            }
+          }
+        }
+      }
+
+      function selectStep(e) {
+        selected = e;
+        Object.keys(wfByStep).forEach(function (k) { wfByStep[k].classList.toggle("sel", wfByStep[k] === wfByStep[e.id]); });
+        renderInspector(e);
+      }
+
+      /* ============ 对话区联动 ============ */
+      function showWorking(text) {
+        workingText.textContent = text;
+        workingEl.classList.add("show");
+        chatScroll.scrollTop = chatScroll.scrollHeight;
+      }
+      function hideWorking() { workingEl.classList.remove("show"); }
+      function workingLabel(e) {
+        if (e.kind === "think") return "思考中";
+        if (e.kind === "tool") return "正在调用 " + e.title;
+        return "";
+      }
+
+      /* ============ 播放引擎 ============ */
+      var playBtn = document.getElementById("playBtn");
+      var stepBtn = document.getElementById("stepBtn");
+      var resetBtn = document.getElementById("resetBtn");
+      var scrub = document.getElementById("scrub");
+      var pill = document.getElementById("statusPill");
+      var statusText = document.getElementById("statusText");
+
+      var speed = 1, playing = false, raf = null;
+      var stepIdx = 0;
+      var stepProgress = 0;
+      var activeStep = null;
+      var elapsed = 0;
+      var tokensUsed = 0, toolsUsed = 0;
+      var lastTs = null;
+
+      var stTime = document.getElementById("stTime"), stSteps = document.getElementById("stSteps"),
+          stTools = document.getElementById("stTools"), stTokens = document.getElementById("stTokens"),
+          stCtx = document.getElementById("stCtx"), ctxFill = document.getElementById("ctxFill");
+
+      var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      /* 节点生长：从父节点位置弹簧弹入，触须随之蔓延（扇出边错开 90ms 依次长出） */
+      function revealStep(e) {
+        var v = e._vis;
+        var pc = parentCenter(e);
+        v.x = pc.x; v.y = pc.y; v.vx = 0; v.vy = 0;
+        v.shown = true;
+        (edgesInto[e.id] || []).forEach(function (o) {
+          if (o.growStart < 0) o.growStart = perfT + (e._sibDelay || 0);
+        });
+        burstAt(e._cx, e._cy);
+        if (CHIP_ON[e.id]) chipByKey[CHIP_ON[e.id]].target = 1;
+        ensureVisible(e);
+      }
+
+      function startStep(e) {
+        revealStep(e);
+        activeStep = e; stepProgress = 0; e._frac = 0;
+        stepState[e.id] = "active";
+        orbHot = true;
+        if (e.kind === "user") msgUser.classList.add("in");
+        if (e.kind === "assistant") {
+          msgAgent.hidden = false;
+          requestAnimationFrame(function () { msgAgent.classList.add("in"); });
+          agentBubble.textContent = ""; agentBubble.classList.add("caret");
+          hideWorking();
+        } else if (e.kind === "think" || e.kind === "tool") {
+          showWorking(workingLabel(e));
+        }
+        selectStep(e);
+      }
+
+      function applyProgress(e) {
+        e._frac = stepProgress;
+        if (e.kind === "assistant") {
+          agentBubble.textContent = e.text.slice(0, Math.floor(e.text.length * stepProgress));
+          chatScroll.scrollTop = chatScroll.scrollHeight;
+        } else if (e.kind === "tool") {
+          wfByStep[e.id].querySelector(".wf-bar").style.width = (e.dur / TOTAL_DUR * 100 * stepProgress) + "%";
+        }
+        if (selected === e) syncInspector(e);
+      }
+
+      function finishStep(e) {
+        stepState[e.id] = e.fail ? "err" : "done";
+        orbHot = false;
+        e._frac = 1;
+        if (e.kind === "assistant") {
+          agentBubble.textContent = e.text; agentBubble.classList.remove("caret");
+          chatScroll.scrollTop = chatScroll.scrollHeight;
+        } else if (e.kind === "tool") {
+          wfByStep[e.id].querySelector(".wf-bar").style.width = (e.dur / TOTAL_DUR * 100) + "%";
+        }
+        tokensUsed += e.tokens;
+        if (e.kind === "tool") toolsUsed++;
+        elapsed += e.dur;
+        stepIdx++;
+        updateStats(e);
+        activeStep = null; stepProgress = 0;
+        if (selected === e) renderInspector(e);
+      }
+
+      function updateStats(lastEv) {
+        var doneCount = STEPS.filter(function (s) { return stepState[s.id] === "done" || stepState[s.id] === "err"; }).length;
+        stTime.innerHTML = elapsed.toFixed(1) + "<small>s</small>";
+        stSteps.textContent = doneCount + " / " + STEPS.length;
+        stTools.textContent = toolsUsed;
+        stTokens.textContent = tokensUsed.toLocaleString();
+        stCtx.textContent = lastEv.ctx + "%";
+        ctxFill.style.width = lastEv.ctx + "%";
+        scrub.value = Math.round(elapsed / TOTAL_DUR * 100);
+      }
+
+      function setStatus(mode, text) {
+        pill.className = "status-pill" + (mode ? " " + mode : "");
+        statusText.textContent = text;
+        liveDot.classList.toggle("on", mode === "running");
+      }
+
+      function tick(ts) {
+        if (!playing) return;
+        if (lastTs === null) lastTs = ts;
+        var dt = (ts - lastTs) / 1000 * speed;
+        lastTs = ts;
+        if (!activeStep) {
+          if (stepIdx >= STEPS.length) { stopPlayback(true); return; }
+          startStep(STEPS[stepIdx]);
+        }
+        stepProgress += dt / activeStep.dur;
+        if (stepProgress >= 1) {
+          finishStep(activeStep);
+        } else {
+          applyProgress(activeStep);
+          var partialTokens = tokensUsed + Math.round(activeStep.tokens * stepProgress);
+          stTokens.textContent = partialTokens.toLocaleString();
+          stTime.innerHTML = (elapsed + activeStep.dur * stepProgress).toFixed(1) + "<small>s</small>";
+        }
+        raf = requestAnimationFrame(tick);
+      }
+
+      function play() {
+        if (stepIdx >= STEPS.length && !activeStep) resetAll();
+        playing = true; lastTs = null; follow = true;
+        playBtn.textContent = "⏸ 暂停";
+        setStatus("running", "运行中");
+        raf = requestAnimationFrame(tick);
+      }
+      function pause() {
+        playing = false; lastTs = null;
+        if (raf) cancelAnimationFrame(raf);
+        playBtn.textContent = "▶ 继续";
+        if (stepIdx < STEPS.length || activeStep) setStatus("", "已暂停");
+      }
+      function stopPlayback(finished) {
+        playing = false; lastTs = null;
+        if (raf) cancelAnimationFrame(raf);
+        playBtn.textContent = "↻ 重新播放";
+        if (finished) { setStatus("done", "已完成 · 任务结束"); hideWorking(); }
+      }
+
+      function doStep() {
+        pause();
+        if (activeStep) { finishStep(activeStep); return; }
+        if (stepIdx >= STEPS.length) return;
+        var e = STEPS[stepIdx];
+        startStep(e); stepProgress = 1; finishStep(e);
+        if (stepIdx >= STEPS.length) stopPlayback(true);
+      }
+
+      function resetAll() {
+        pause();
+        stepIdx = 0; stepProgress = 0; activeStep = null;
+        elapsed = 0; tokensUsed = 0; toolsUsed = 0; selected = null;
+        STEPS.forEach(function (e) {
+          e._frac = 0;
+          stepState[e.id] = "pending";
+          e._vis.shown = false; e._vis.scale = 0; e._vis.sv = 0;
+          e._vis.x = e._cx; e._vis.y = e._cy; e._vis.vx = 0; e._vis.vy = 0;
+          wfByStep[e.id].querySelector(".wf-bar").style.width = "0%";
+          wfByStep[e.id].classList.remove("sel");
+        });
+        edgeObjs.forEach(function (o) { o.grow = 0; o.growStart = -1; });
+        Object.keys(chipByKey).forEach(function (k) { chipByKey[k].target = 0; chipByKey[k].alpha = 0; });
+        bursts.length = 0;
+        orbHot = false;
+        inspTag.className = "tag tool"; inspTag.textContent = "详情";
+        inspTitle.textContent = "步骤详情"; inspStatus.textContent = "";
+        inspBody.innerHTML = '<div class="insp-empty">运行开始后，点击图谱中的任意节点，这里会显示这一步的思考内容、工具入参 / 出参。</div>';
+        msgUser.classList.remove("in");
+        msgAgent.hidden = true; msgAgent.classList.remove("in");
+        agentBubble.textContent = ""; agentBubble.classList.remove("caret");
+        hideWorking();
+        stTime.innerHTML = "0.0<small>s</small>";
+        stSteps.textContent = "0 / " + STEPS.length;
+        stTools.textContent = "0";
+        stTokens.textContent = "0";
+        stCtx.textContent = "0%";
+        ctxFill.style.width = "0%";
+        scrub.value = 0;
+        playBtn.textContent = "▶ 播放";
+        setStatus("", "待开始");
+        initView();
+        sideScroll.scrollTop = 0;
+        chatScroll.scrollTop = 0;
+      }
+
+      playBtn.addEventListener("click", function () { playing ? pause() : play(); });
+      stepBtn.addEventListener("click", doStep);
+      resetBtn.addEventListener("click", resetAll);
+      document.getElementById("speedGroup").addEventListener("click", function (ev) {
+        var b = ev.target.closest("button"); if (!b) return;
+        speed = parseFloat(b.getAttribute("data-s"));
+        this.querySelectorAll("button").forEach(function (x) { x.classList.toggle("on", x === b); });
+      });
+      scrub.addEventListener("input", function () {
+        var target = parseFloat(this.value) / 100 * TOTAL_DUR;
+        pause(); resetAll();
+        var acc = 0;
+        for (var i = 0; i < STEPS.length; i++) {
+          var e = STEPS[i];
+          if (acc + e.dur <= target + 0.001) {
+            startStep(e); stepProgress = 1; finishStep(e);
+            acc += e.dur;
+          } else break;
+        }
+        hideWorking();
+        if (stepIdx >= STEPS.length) stopPlayback(true);
+        else { setStatus("", "已暂停"); playBtn.textContent = "▶ 继续"; }
+      });
+
+      /* 对话区输入框：提交一句话 → 作为新的用户消息重新演示 */
+      document.getElementById("composerForm").addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var v = document.getElementById("composerInput").value.trim();
+        if (v) {
+          EVENTS[0].text = v;
+          EVENTS[0].input = { role: "user", content: v };
+          userBubble.textContent = v;
+          document.getElementById("composerInput").value = "";
+        }
+        resetAll();
+        play();
+      });
+
+      /* ============ 背景神经网络：漂移的银灰粒子 + 突触连线（参照 neural-creator-dashboard） ============ */
+      (function () {
+        var cv = document.getElementById("neuralBg");
+        if (!cv) return;
+        var cx2 = cv.getContext("2d");
+        var W = 0, H = 0, pts = [];
+        var bgPulse = { i: 0, j: 1, u: 0 };
+        function resize() {
+          var dpr = Math.min(2, window.devicePixelRatio || 1);
+          W = graphViewport.clientWidth; H = graphViewport.clientHeight;
+          cv.width = W * dpr; cv.height = H * dpr;
+          cx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+          var n = Math.max(24, Math.min(58, Math.floor(W * H / 15000)));
+          pts = [];
+          for (var i = 0; i < n; i++) {
+            pts.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 0.16, vy: (Math.random() - 0.5) * 0.16, r: 0.8 + Math.random() * 1.1, gold: i % 6 === 0 });
+          }
+          if (reduceMotion) drawBg();
+        }
+        function drawBg() {
+          cx2.clearRect(0, 0, W, H);
+          var i, j, a, b, dx, dy, d;
+          for (i = 0; i < pts.length; i++) {
+            for (j = i + 1; j < pts.length; j++) {
+              a = pts[i]; b = pts[j];
+              dx = a.x - b.x; dy = a.y - b.y; d = dx * dx + dy * dy;
+              if (d < 12100) {
+                cx2.strokeStyle = "rgba(178,186,205," + (0.13 * (1 - d / 12100)).toFixed(3) + ")";
+                cx2.lineWidth = 1;
+                cx2.beginPath(); cx2.moveTo(a.x, a.y); cx2.lineTo(b.x, b.y); cx2.stroke();
+              }
+            }
+          }
+          pts.forEach(function (p) {
+            cx2.fillStyle = p.gold ? "rgba(236,217,166,.75)" : "rgba(190,197,214,.5)";
+            cx2.beginPath(); cx2.arc(p.x, p.y, p.r, 0, 6.2832); cx2.fill();
+          });
+          /* 偶尔一颗金色脉冲沿连线游走，alpha = sin(u·π) 首尾淡入淡出 */
+          if (pts.length > 2 && !reduceMotion) {
+            bgPulse.u += 0.007;
+            if (bgPulse.u >= 1) {
+              bgPulse.i = Math.floor(Math.random() * pts.length);
+              do { bgPulse.j = Math.floor(Math.random() * pts.length); } while (bgPulse.j === bgPulse.i);
+              bgPulse.u = 0;
+            }
+            var pa = pts[bgPulse.i], pb = pts[bgPulse.j];
+            if (pa && pb) {
+              var pu = bgPulse.u;
+              var px = pa.x + (pb.x - pa.x) * pu, py = pa.y + (pb.y - pa.y) * pu;
+              cx2.save();
+              cx2.globalCompositeOperation = "lighter";
+              var pg = cx2.createRadialGradient(px, py, 0, px, py, 10);
+              pg.addColorStop(0, "rgba(244,216,148," + (0.85 * Math.sin(pu * Math.PI)).toFixed(3) + ")");
+              pg.addColorStop(1, "rgba(244,216,148,0)");
+              cx2.fillStyle = pg;
+              cx2.beginPath(); cx2.arc(px, py, 10, 0, 6.2832); cx2.fill();
+              cx2.restore();
+            }
+          }
+        }
+        function loopBg() {
+          pts.forEach(function (p) {
+            p.x += p.vx; p.y += p.vy;
+            if (p.x < 0 || p.x > W) p.vx *= -1;
+            if (p.y < 0 || p.y > H) p.vy *= -1;
+          });
+          drawBg();
+          requestAnimationFrame(loopBg);
+        }
+        resize();
+        window.addEventListener("resize", resize);
+        if (!reduceMotion) requestAnimationFrame(loopBg);
+      })();
+
+      /* 打开页面自动开播（等光球 0.8s 点亮 + 火花迸发完成后再开始） */
+      setTimeout(play, 1050);
+    </script>
+  </body>
+</html>
